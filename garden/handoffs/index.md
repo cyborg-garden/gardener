@@ -1,0 +1,1 @@
+- 2026-07-11 · example-handoff · scaffolded the repo and example content

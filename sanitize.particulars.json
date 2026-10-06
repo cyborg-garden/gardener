@@ -1,0 +1,34 @@
+{
+  "$comment": "Config for Layer 2 of the sanitize gate (tools/particulars.js) — org/person/narrative particulars. Every value here is generic on purpose: this file ships in a public artefact, so it must not name anyone's org, people, or projects. YOUR particulars go in `.overlay/particulars` (gitignored, instance-owned, one term per line, `re:` prefix for a regex) — the substrate never learns them.",
+
+  "$comment_no_skip_paths": "There is NO skip_paths key, and adding one back would be a mistake. A directory-wide skip is an unconditional escape hatch over a directory that ships publicly: anything dropped inside passes green, including the particulars this layer exists to catch. Fixtures that must carry particular-SHAPED content are handled two narrower ways instead — an inline `sanitize:allow` marker on the one line, or `expect_findings` below.",
+
+  "$comment_instance_paths": "The instance set from DISTRIBUTION.md. Excluded only under `--substrate` scope (what `contribute` should use), and the gate names that narrowing in its summary line. The default whole-tree scope scans them too — a public artefact's example garden must be as clean as its machinery.",
+  "instance_paths": ["garden/", ".overlay/"],
+
+  "$comment_inline_marker": "The ONLY whole-line suppression, and the one a human typed onto that line on purpose. Suppressions show up in the diff, which is the only thing keeping them honest.",
+  "inline_marker": "sanitize:allow",
+
+  "$comment_marker_max_line": "The budget that stops 'clears the line' from meaning 'clears the file'. A file with no newlines — minified JS, one-line JSON — is a SINGLE line, so one marker in it used to silence every rule over the whole file. Above this many characters the marker is refused and the line is scanned anyway; findings on a refused line say so. 300 is about three soft-wrapped terminal lines: the edge of what a reviewer reads, far below any bundle.",
+  "marker_max_line": 300,
+
+  "$comment_allow_substrings": "Scoped to the matched SPAN, not the line. `example.com` clears the email match in `user@example.com`; it does not clear a person, an org namespace, a sum, or a declared particular sitting elsewhere on the same line. A whole-line allowlist is a kill switch wearing a per-rule label.",
+  "allow_substrings": ["example.com", "user@example", "noreply@anthropic.com"],
+
+  "$comment_expect_findings": "INVERTED fixtures: exact repo-relative paths (never prefixes — a prefix rebuilds the escape hatch) whose findings are expected and do not fail the gate. Their SILENCE fails it instead: a listed file that produces no findings, or that has vanished from the scan, exits 1. This is how a fixture holds particular-shaped content without carving a blind spot.",
+  "expect_findings": ["test/fixtures/particulars-expected.md"],
+
+  "$comment_declared": "Inline alternative to `.overlay/particulars`, for operators who prefer config. Leave empty upstream.",
+  "declared": [],
+  "declared_file": ".overlay/particulars",
+
+  "rules": {
+    "org-repo": true,
+    "person-name": true,
+    "money": true,
+    "email": true
+  },
+
+  "$comment_semantic": "OPT-IN and never load-bearing. Set `command` to an argv array; file content arrives on stdin, and the command should print {\"flagged\": bool, \"reasons\": [...]}. Unset, missing, or failing = silently not run, and the deterministic rules above still carry the gate. Never rely on this lane alone.",
+  "semantic": { "command": null }
+}

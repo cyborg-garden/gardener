@@ -1,0 +1,13 @@
+{
+  "name": "gardener",
+  "version": "0.0.1",
+  "description": "A portable memory + coordination substrate you hand to your agent.",
+  "type": "module",
+  "bin": { "garden-io": "bin/garden-io.js" },
+  "scripts": {
+    "test": "node --test",
+    "validate": "node tools/validate.js garden",
+    "sanitize": "bash tools/sanitize-scan.sh"
+  },
+  "license": "MIT"
+}

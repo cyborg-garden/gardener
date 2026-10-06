@@ -1,0 +1,55 @@
+# The gate, actually invoked.
+#
+# Until this file existed, nothing ran `tools/sanitize-scan.sh`: no workflow, no hook, no
+# packaging step. Every improvement to it — the private-key pattern that had never matched,
+# the particulars layer, the filename handling — improved a script that only ran when
+# somebody remembered to type it. A control nobody invokes is not a control.
+#
+# Two jobs on purpose. `npm test` proves the gate still works; `npm run sanitize` runs it
+# over this tree. A suite that passes while the gate itself reports a leak, or the reverse,
+# is a distinction worth seeing in the checks list rather than averaging into one red X.
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # No `npm ci`: the substrate ships zero dependencies, and there is no lockfile to
+      # install from. If that ever changes, this is the line that has to change with it.
+      - run: npm test
+
+  sanitize:
+    name: sanitize gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The whole tracked tree — the only scope that yields an unqualified clean bill.
+      # Not `--substrate`: a public artefact's example garden and test suite are as public
+      # as its machinery, which is the scoping decision the layer was built around.
+      - run: npm run sanitize
+
+  validate:
+    name: garden conforms to SPEC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm run validate
