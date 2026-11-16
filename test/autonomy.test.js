@@ -104,6 +104,7 @@ test('a granted rung raises authority; per-capability override wins', () => {
       'rung: R2',
       'capabilities:',
       '  reprioritize-roadmap: propose',
+      '  garden-io:sync: act:contained',
     ].join('\n'),
   });
   const a = loadAutonomy(root);
@@ -111,6 +112,7 @@ test('a granted rung raises authority; per-capability override wins', () => {
   assert.equal(a.attended, true);
   assert.equal(a.authorityFor('triage-board'), 'act:contained');    // rung default
   assert.equal(a.authorityFor('reprioritize-roadmap'), 'propose');  // override
+  assert.equal(a.authorityFor('garden-io:sync'), 'act:contained');
   rmSync(root, { recursive: true, force: true });
 });
 

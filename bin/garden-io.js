@@ -44,6 +44,9 @@ const nonEmpty = v => (v === undefined || v === '' ? undefined : v);
 const authority = nonEmpty(flagAuthority)
   ?? nonEmpty(process.env.GARDEN_AUTHORITY)
   ?? loadAutonomy(process.env.GARDEN_OVERLAY_ROOT || process.cwd()).authorityFor('garden-io');
+const syncAuthority = nonEmpty(flagAuthority)
+  ?? nonEmpty(process.env.GARDEN_AUTHORITY)
+  ?? loadAutonomy(process.env.GARDEN_OVERLAY_ROOT || process.cwd()).authorityFor('garden-io:sync');
 
 const io = new GardenIO();
 
@@ -88,7 +91,7 @@ const ops = {
     if (!args[0]) bail('resolve requires a ref argument');
     const r = io.resolve(args[0]); if (!r) process.exit(1); process.stdout.write(JSON.stringify(r) + '\n');
   },
-  sync: () => { process.stdout.write(JSON.stringify(io.sync()) + '\n'); },
+  sync: () => { process.stdout.write(JSON.stringify(io.sync({ authority: syncAuthority })) + '\n'); },
 };
 
 try {

@@ -82,6 +82,22 @@ filesystem attacker; use OS-level confinement when that is in the threat model.
   (`new GardenIO({ authority })`), or via `GARDEN_AUTHORITY`; resolve it from the
   overlay with `loadAutonomy(root).authorityFor(capability)`, which fails closed to R0.
   `bin/garden-io.js` does exactly that, and accepts `--authority` to override.
+- **Git metadata is not a document.** Agent read/write/list operations refuse `.git`
+  paths and omit them from recursive listings. Only the operator may configure Git;
+  no garden document is allowed to become repository configuration, a hook, or a
+  remote URL. The guard checks the canonical target against the actual Git
+  directory, so aliases and renamed metadata do not bypass it. Only a conventional,
+  operator-owned real `<garden>/.git` directory is supported: symlinked or pointer
+  markers, separate metadata, and `commondir` redirection fail closed for storage
+  operations as well as sync, rather than being mistaken for an absent repository.
+- **Sync is a separate state-changing capability.** It requires `act:contained` or
+  higher (`garden-io:sync` in the overlay, or the trusted-caller override), not R0/R1.
+  It refuses nested-repository discovery: the canonical Git top-level must equal the
+  configured garden root before staging. Staging is scoped to that root, and Git
+  environment configuration/global includes/editor execution are cleared for the
+  subprocess. Local `.git/config` remains operator-owned; arbitrary repository
+  configuration is not made safe by this check. Sync can commit and push, so it
+  belongs behind the same explicit grant and deployment isolation as other actions.
 - **A live, human-edited backend (e.g. Notion):** human-set fields are human-owned
   and refused above `propose`, regardless of what the loop asks. Low on the ladder,
   the only thing the gardener may write is a single agent-owned region (one "auto"
