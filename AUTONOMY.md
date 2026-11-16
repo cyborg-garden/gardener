@@ -95,7 +95,10 @@ filesystem attacker; use OS-level confinement when that is in the threat model.
   It refuses nested-repository discovery: the canonical Git top-level must equal the
   configured garden root before staging. Staging is scoped to that root, and Git
   environment configuration/global includes/editor execution are cleared for the
-  subprocess. Local `.git/config` remains operator-owned; arbitrary repository
+  subprocess; only the operator's global `user.name` and `user.email` are retained
+  as commit identity. Staging and commit failures are explicit and never reported as a
+  successful synchronization or followed by pushing stale `HEAD`. An empty staged
+  diff is the only no-op path. Local `.git/config` remains operator-owned; arbitrary repository
   configuration is not made safe by this check. Sync can commit and push, so it
   belongs behind the same explicit grant and deployment isolation as other actions.
 - **A live, human-edited backend (e.g. Notion):** human-set fields are human-owned

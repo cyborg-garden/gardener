@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
+  existsSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -125,6 +125,86 @@ test('sync requires act:contained even at R1 and supports an authorized exact ro
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), { committed: true, synced: true });
     assert.equal(git(root, 'status', '--porcelain'), '');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('sync does not report success when commit identity is unavailable', () => {
+  const parent = scratch('garden-sync-missing-identity-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    git(root, 'config', '--unset', 'user.name');
+    git(root, 'config', '--unset', 'user.email');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'unpublished\n');
+    const result = cli(root, parent, 'sync', {
+      HOME: join(parent, 'empty-home'), XDG_CONFIG_HOME: join(parent, 'empty-config'),
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /sync (add|commit) failed/);
+    assert.equal(git(root, 'status', '--porcelain'), 'A  state.md\n');
+    execFileSync('git', ['clone', '-q', remote, join(parent, 'clone')]);
+    assert.equal(existsSync(join(parent, 'clone', 'state.md')), false);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('sync surfaces a failing pre-commit hook instead of pushing stale HEAD', () => {
+  const parent = scratch('garden-sync-hook-failure-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    const hook = join(root, '.git', 'hooks', 'pre-commit');
+    writeFileSync(hook, '#!/bin/sh\nexit 1\n');
+    chmodSync(hook, 0o755);
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'unpublished\n');
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /sync commit failed/);
+    assert.equal(git(root, 'status', '--porcelain'), 'A  state.md\n');
+    execFileSync('git', ['clone', '-q', remote, join(parent, 'clone')]);
+    assert.equal(existsSync(join(parent, 'clone', 'state.md')), false);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('sync preserves global commit identity without other global config', () => {
+  const parent = scratch('garden-sync-global-identity-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    const home = join(parent, 'home');
+    initRepo(root, remote);
+    git(root, 'config', '--unset', 'user.name');
+    git(root, 'config', '--unset', 'user.email');
+    mkdirSync(home);
+    const globalConfig = join(home, '.gitconfig');
+    writeFileSync(globalConfig, '[user]\n\tname = Global Operator\n\temail = operator@example.com\n[core]\n\teditor = false\n');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'committed\n');
+    const result = cli(root, parent, 'sync', { HOME: home, XDG_CONFIG_HOME: join(home, '.config') });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { committed: true, synced: true });
+    assert.equal(git(root, 'log', '-1', '--format=%an <%ae>').trim(), 'Global Operator <operator@example.com>');
+    execFileSync('git', ['clone', '-q', remote, join(parent, 'clone')]);
+    assert.equal(readFileSync(join(parent, 'clone', 'state.md'), 'utf8'), 'committed\n');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('a clean conventional repository still performs a no-op sync', () => {
+  const parent = scratch('garden-sync-noop-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    const result = cli(root, parent, 'sync');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { committed: false, synced: true });
   } finally { rmSync(parent, { recursive: true, force: true }); }
 });
 
