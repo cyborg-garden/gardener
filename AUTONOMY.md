@@ -63,6 +63,17 @@ operator's overlay grants (defaulting to R0), `Autonomy#canAct()` is the act-gat
 and `writeAllowed(authority, region)` is the write-policy a driver enforces in its
 `write()` via its declared `regionOf()`.
 
+Path scope is part of that boundary, not a convenience: the git driver confines every
+read, write, and list to the configured garden root, refuses `..` and absolute-path
+escapes, and resolves the deepest existing ancestor so a symlink (including a symlinked
+directory with a not-yet-created file beneath it) cannot redirect an operation outside
+the root. The configured root itself must be a real directory, not a symlink. A missing
+garden is still created lazily by its first valid write. This is a filesystem boundary
+for the driver, not a general OS sandbox: an agent with an unrestricted shell or another
+writable mount must be isolated separately, and the overlay should be mounted read-only
+to the agent as well. Path checks are not a race-proof defence against a concurrent
+filesystem attacker; use OS-level confinement when that is in the threat model.
+
 - **Git driver:** git history is reversible and it declares no human region, so once
   the operator has granted `propose` or above every path it owns is writable and the
   act-gate does the interesting work. "Permissive about regions" is not "permissive
@@ -160,6 +171,14 @@ upstream never ships:
 
 - `.overlay/autonomy.yml` — the rung + per-capability authority overrides.
 - `.overlay/grants/<capability>` — one file per sharp-edge grant (presence = granted).
+
+The overlay is configuration, not an authentication mechanism for its caller. The CLI's
+`--authority` flag and `GARDEN_AUTHORITY` environment variable are **trusted-caller
+declarations**, not operator grants: anyone who can choose the process's arguments or
+environment can assert a higher rung. They take precedence over the overlay for compatibility
+with an operator or embedding harness, so they must never be exposed to an untrusted agent.
+Likewise, an agent that can modify its overlay can rewrite its own grant; mount it read-only
+and isolate the process and other writable paths at the OS boundary when that matters.
 
 Because grants live in the overlay, pulling substrate updates from upstream
 (`garden-io update`, when it lands) never raises or lowers your autonomy, and forking
