@@ -19,7 +19,7 @@ finding. Particulars are replaced using the glossary in `README.md`.
 ## Two things visible only in aggregate
 
 **Detection was human, almost without exception.** Of the reasoning failures in §1, one was
-self-caught and one was found later by an audit. The rest were caught by `{{REVIEWER}}`
+self-caught and two were found later by audits. The rest were caught by `{{REVIEWER}}`
 reading the output and noticing that it did not add up. No automated check caught any of them,
 because the agent's outputs were prose and documents, and nothing in the loop read prose
 adversarially. A code-shaped agent has a build that goes red. This one had a person, and when
