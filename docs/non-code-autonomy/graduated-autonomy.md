@@ -119,7 +119,9 @@ of rung, off by default even at the top of the ladder. Neither becomes unattende
 neither is reversible, and reversibility is a precondition of the promotion gate rather than
 a nice-to-have.
 
-What *does* graduate is the friction, along this path:
+What *does* graduate is the friction, along this path. These stages change how approval is
+obtained; none authorizes the agent to schedule an outbound send or execute it without an
+operator present:
 
 1. **Draft, human sends.** The agent produces the message; a human copies it out and sends it
    from their own account. The agent has no send capability at all.
@@ -140,14 +142,19 @@ text, because the failure mode of a mis-scoped standing approval is unbounded.
 **A scheduled action carries the grant of the action it performs, plus `unattended`.**
 
 Scheduling is not a capability with its own risk profile; it is a multiplier on whatever it
-schedules. A cron that reads is `observe` and needs `unattended`. A cron that chases an email
-reply is `correspond:outbound` and needs that token *and* `unattended`, which per
-[`AUTONOMY.md`](../../AUTONOMY.md) is never implied by action authority alone and must be granted separately.
+schedules. A cron that reads is `observe` and needs `unattended`. A scheduled outbound send or
+spend is not permitted by this contract, even if a standing grant exists: neither capability
+can become unattended. Scheduling one would otherwise smuggle in the forbidden attendance
+escalation alongside its sharp-edge token.
 
-The practical consequence: "set up a job to check for responses and follow up" is two grants,
-not one, and the follow-up half is the sharp edge. A useful decomposition is to schedule the
-`observe` half freely and have it escalate, so the recurring job watches for the reply and the
-sending stays per-action.
+For capabilities that may act unattended, a scheduled action needs both the action's own
+authority and a separately granted `unattended` dial. Per
+[`AUTONOMY.md`](../../AUTONOMY.md), attendance is never implied by action authority alone.
+
+The practical consequence: "set up a job to check for responses and follow up" spans two
+capabilities, not one grant. The recurring `observe` half may watch for a reply after an
+`unattended` grant. It must escalate before any follow-up is sent; the outbound half remains
+attended and independently granted.
 
 ## Three rules the code case never needed
 
