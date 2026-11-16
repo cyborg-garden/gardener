@@ -18,14 +18,26 @@ npm run validate
 npm run sanitize
 ```
 
-Read the example board:
+Read the example board using an explicit path (the default garden is relative to your current
+directory):
 
 ```sh
-node bin/garden-io.js read state/threads.md
+GARDEN_ROOT="${PWD}/garden" node bin/garden-io.js read state/threads.md
 ```
 
-A write with no grant is refused. To grant `propose` for the CLI in your own instance, create
-`.overlay/autonomy.yml` (outside the tracked `garden/` data):
+A write with no declared authority is refused. For a scratch installation, set **both** roots to
+absolute paths in the same disposable parent directory and disable git sync:
+
+```sh
+SCRATCH_DIR="$(mktemp -d)"
+export GARDEN_ROOT="$SCRATCH_DIR/garden"
+export GARDEN_OVERLAY_ROOT="$SCRATCH_DIR"
+export GARDEN_SYNC=off
+mkdir -p "$SCRATCH_DIR/.overlay"
+```
+
+To grant `propose` for this CLI in your scratch instance, create `.overlay/autonomy.yml` outside
+the tracked `garden/` data:
 
 ```yaml
 rung: R1
@@ -39,10 +51,18 @@ printf '# Board\n\n## Now\n- [ ] #first Tend the garden\n' \
 node bin/garden-io.js read state/threads.md
 ```
 
-For a scratch installation, set `GARDEN_ROOT` to a disposable garden directory and
-`GARDEN_OVERLAY_ROOT` to its parent. Do not experiment against your real board. To avoid git
-commits while trying these commands, also set `GARDEN_SYNC=off`. See
-[`AUTONOMY.md`](AUTONOMY.md) before granting a higher rung or unattended execution.
+For a scratch installation, set **both** `GARDEN_ROOT` and `GARDEN_OVERLAY_ROOT` to absolute
+paths in the same disposable parent directory, and set `GARDEN_SYNC=off` to avoid commits. Set
+these on every new shell rather than relying on an earlier working directory or overlay
+location. Do not experiment against your real board. See [`AUTONOMY.md`](AUTONOMY.md) before
+granting a higher rung or unattended execution.
+
+**Caller trust boundary:** `--authority` and `GARDEN_AUTHORITY` are declarations by a trusted
+operator or embedding harness, **not authenticated grants**. Anyone who can choose the process's
+arguments or environment can declare a higher rung. The overlay is safe only when the agent
+cannot modify it; use a read-only mount and OS-level process/filesystem isolation when exposing
+this CLI to an untrusted agent. Path confinement limits this driver's filesystem reach, but does
+not turn an unrestricted shell account into a sandbox.
 
 ## What is implemented vs. specified
 

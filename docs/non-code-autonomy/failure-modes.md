@@ -19,15 +19,15 @@ finding. Particulars are replaced using the glossary in `README.md`.
 ## Two things visible only in aggregate
 
 **Detection was human, almost without exception.** Of the reasoning failures in §1, one was
-self-caught. The rest were caught by `{{REVIEWER}}` reading the output and noticing that it
-did not add up. No automated check caught any of them, because the agent's outputs were
-prose and documents, and nothing in the loop read prose adversarially. A code-shaped agent
-has a build that goes red. This one had a person, and when the person was busy the failures
-shipped.
+self-caught and one was found later by an audit. The rest were caught by `{{REVIEWER}}`
+reading the output and noticing that it did not add up. No automated check caught any of them,
+because the agent's outputs were prose and documents, and nothing in the loop read prose
+adversarially. A code-shaped agent has a build that goes red. This one had a person, and when
+the person was busy the failures shipped.
 
 **Corrections landed as data edits, not as checks.** Nearly every fix in this ledger was a
 correction to the artefact that was wrong: the count restated, the page rewritten, the line
-amended. Only the transport-layer bugs (FM-13) produced code that would catch the next
+amended. Only the transport-layer bugs (FM-14) produced code that would catch the next
 instance. This is the ledger's own bias and it is worth naming, because a catalog of
 failures whose fixes are all data edits is a catalog that will grow at the same rate next
 month.

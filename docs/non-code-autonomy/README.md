@@ -21,8 +21,8 @@ implement these contracts.
   and countermeasures. It includes absence failures: expired approvals, lost scheduled runs, and
   capabilities that disappear while the status surface still looks healthy.
 - **[Non-code task contract](task-contract.md)** — a proposed task lane covering explicit
-  assignment, fencing untrusted board text, evidence-backed plans, approvals with loud expiry,
-  and read-back-verified writes.
+  assignment, a normative JSON-encoded untrusted-row wire format, evidence-backed plans,
+  role-bound per-action approvals with loud expiry, and read-back-verified writes.
 
 Read these alongside [`RUBRIC.md`](../../RUBRIC.md): a deterministic check can report drift, but
 non-code work has no universal green build. Human-approved patterns, visible dry-run diffs,

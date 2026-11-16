@@ -119,23 +119,20 @@ of rung, off by default even at the top of the ladder. Neither becomes unattende
 neither is reversible, and reversibility is a precondition of the promotion gate rather than
 a nice-to-have.
 
-What *does* graduate is the friction, along this path. These stages change how approval is
-obtained; none authorizes the agent to schedule an outbound send or execute it without an
-operator present:
+What *does* graduate is the drafting workflow, not permission to send without fresh human
+consent:
 
 1. **Draft, human sends.** The agent produces the message; a human copies it out and sends it
    from their own account. The agent has no send capability at all.
 2. **Draft, human approves, agent sends.** The agent holds the send capability and uses it
    only on a specific approved message to a specific recipient. One approval authorises one
    send. This is the first rung at which the token exists.
-3. **Standing approval for a narrow class.** A named recipient and a named message class the
-   operator has approved repeatedly, with every send still reported. For example: replies
-   chasing a response on a thread the principal already approved opening. The class is
-   enumerated in the grant, not inferred by the agent.
 
-There is no step four in the near term. `transact:spend` does not get step three at all: every
-transaction is approved individually, with the amount and the counterparty in the approval
-text, because the failure mode of a mis-scoped standing approval is unbounded.
+There is no standing-approval stage for outbound correspondence in this contract. A recipient,
+thread, or message class named in earlier approvals does not approve the next send. Each
+outbound action requires a new request that binds its exact content and recipient to an
+authenticated, authorized approver, and execution remains attended. `transact:spend` likewise
+requires individual approval with the amount and counterparty in the approval text.
 
 ### `schedule` inherits
 
@@ -160,18 +157,48 @@ attended and independently granted.
 
 ### 1. The approval channel is part of the grant
 
-A grant that says "the agent may send after approval" is incomplete until it says **where
-approval is asked and what counts as approval.** The channel is part of the security boundary,
-not a delivery detail:
+A grant that says "the agent may send after approval" is incomplete until it says **who may
+approve, on which channel, and how identity is verified.** These are part of the security
+boundary, not delivery details.
 
-- Approval is requested and given on a channel the operator named in the overlay.
-- An approval arriving on any other channel is not an approval.
-- The identity of the approver is checked, not assumed from the channel. A group channel
-  contains people who are not the operator. A deployment in this ledger ran with its
-  assistant answering any member of any group it had joined, which means an approval prompt
-  posted to a group was answerable by anyone in it.
-- The approval text names the specific action, including the counterparty and any amount. An
-  approval of a plan is not an approval of the actions in it.
+A future integration must record an `approvers:` registry and an `approvals:` entry for each
+capability requiring consent. **Autonomy grants (`rung:`) are parsed by the shipped CLI, but
+`approvers:` and `approvals:` are schema only: the current parser does not consume them.**
+Their minimum shapes are:
+
+```yaml
+approvers:
+  principal:
+    platform: <configured-platform>
+    id: <authenticated-platform-principal-id>
+approvals:
+  correspond:outbound:
+    required_role: principal
+    channel: <operator-configured-channel-id>
+```
+
+- `required_role` is `principal` for the principal's personal decisions, correspondence, and
+  spending. Approval is accepted only from the identity bound to that role, unless an explicit
+  delegation (below) names another role for this decision class. The operator grants or changes
+  autonomy configuration; being the operator does not implicitly confer the principal's
+  authority over those decisions.
+- `approvers` binds each role to an authenticated platform identity, never to a display name.
+  A name, mention, or group membership is never proof. The channel adapter must authenticate
+  the sender's platform identity and match both `platform` and `id`.
+- `channel` names the one channel on which approval is requested and given. Approval arriving
+  anywhere else, or from an identity not authorized for the required role, is refused.
+- The approval text names the specific action, exact content or artifact digest, counterparty,
+  and any amount. An approval of a plan is not approval of the actions in it.
+- A reviewer has no approval authority by default. A principal may delegate a named decision
+  class to a reviewer only through an explicit operator-recorded grant naming the reviewer,
+  role, scope, and channel. Delegation does not transfer the principal's other powers.
+- When the principal and operator are the same human, the role bindings may point to the same
+  authenticated identity; the role requirement remains explicit. Missing or ambiguous bindings
+  fail closed.
+
+An approval prompt posted to a group is answerable only by a bound identity, never by anyone
+in the group. The original deployment's failure was to let group membership substitute for
+identity.
 
 ### 2. An expired approval must fail loudly
 
@@ -200,7 +227,12 @@ point; the point is that the arrangement made the grant advisory.
 Two consequences worth stating plainly:
 
 - Autonomy language belongs in the overlay, mounted read-only to the agent, separate from any
-  memory the agent maintains about itself.
+  memory the agent maintains about itself. The storage boundary is specified in
+  `../../AUTONOMY.md`: every git-driver path stays within the garden root, a symlinked root is
+  refused, and an in-root symlink may not resolve outside it. These are necessary controls,
+  not a general OS sandbox: an agent with an unrestricted shell, other writable mount, or
+  unconfined API can still act outside the driver. Deployments must isolate those paths
+  separately.
 - Prose autonomy is not a grant even when it is unwritable. The same deployment's memory held
   "board updates: just do, no need to ask" three sentences from "never take external actions
   without explicit permission, this is a hard rule," with a board update being an external

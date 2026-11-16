@@ -55,23 +55,76 @@ its grant, and a human approves that action. The path from board text to outboun
 always runs through a human, and the fence is what keeps that true when the text is trying to
 sound like an instruction.
 
-**Read-side requirements, distilled from the source deployment:**
+### 2.1 · Normative row wire format
 
-- **Free-form text is fenced.** Title and body are emitted inside explicit untrusted markers,
-  newline-collapsed to a single line, fence markers in the content neutralized to lookalike
-  characters so a crafted row cannot forge a fence close, and length-capped.
-- **Structural values are filtered, not fenced.** Status, priority, and due are character
-  filtered to a conservative set and capped, because they appear on structural lines where a
-  backtick or a shell metacharacter would be read as syntax.
-- **URLs are derived, never echoed.** The link to a row is constructed from its id in the
-  canonical form. The URL field returned by the API is discarded. A row cannot smuggle a link
-  by putting one in a field the gardener would print.
-- **Links are not followed.** Not from the body, not from a field, not ever as part of gather.
-  Fetching a URL a row supplies is how a board row becomes a request the agent makes on
-  someone's behalf.
-- **The fence header is the boundary and is never reformatted.** Downstream code concatenates
-  gather output byte for byte. Reformatting, indenting, or summarizing a fence silently
-  weakens it.
+Each eligible row is emitted as UTF-8 in exactly this form, including the final newline:
+
+```text
+GARDEN-UNTRUSTED-ROW-V1 <id-json>\n
+TITLE <title-json>\n
+STATUS <status-json> PRIORITY <priority-json> DUE <due-json>\n
+BODY <body-json>\n
+END-GARDEN-UNTRUSTED-ROW-V1\n
+```
+
+The first line begins at byte zero of a row; there are no indentation or blank separator lines.
+`<id-json>`, `<title-json>`, and `<body-json>` are the result of serializing the source string
+with **RFC 8259 JSON**, equivalent to JavaScript `JSON.stringify(value)` with no replacer or
+whitespace options. Quotes, reverse solidus, and control characters are escaped; newlines become
+the two-byte sequence `\n`, not line breaks. Unicode is otherwise preserved. The resulting JSON
+text cannot contain a literal carriage return or line feed. Marker-shaped text remains inside a
+JSON string on its field line and can never begin a marker line, so it cannot forge a boundary.
+A parser **MUST** decode the JSON value rather than interpreting backslash escapes itself; a
+consumer **MUST NOT** reformat the row before the trust boundary.
+
+Structural values use the same JSON string grammar. `status` and `priority` come from the
+adapter's declared enumeration, not an arbitrary board string; `due` is either an RFC 3339
+date/time string or `null`. A missing optional value is `null`, never an empty substitute. A
+value outside its declared grammar is a row-level error, not text to sanitize into validity.
+
+Before encoding, an adapter validates `id` against its own conservative ASCII identifier
+grammar, maximum 128 bytes. It does **not** transform an invalid ID to make it fit. Derived URLs
+are constructed by the adapter from the validated ID with a fixed origin and path template and
+standard percent-encoding; no URL field from the board is echoed or followed. A row with a
+duplicate or already-consumed ID is refused with an explicit error, never merged into another
+row or used to resume a prior claim.
+
+Each of `id`, `title`, and `body` is capped at 4,096 bytes **after JSON encoding**. Exceeding
+the cap is a visible row error:
+
+```text
+ROW-ERROR <id-json-or-null> <stable-error-code>\n
+```
+
+`stable-error-code` is one of `invalid-id`, `duplicate-id`, `invalid-structural-value`,
+`field-too-large`, or `malformed-row`. No partial row is emitted. An error inside the fence is
+never substituted for an untrusted title/body. A truncated record, unknown marker, duplicate
+field, missing final newline, invalid JSON string, or trailing content after `END` fails the
+whole row closed. A truncated batch is reported as truncated, not as a smaller board.
+
+### 2.2 · Conformance vectors
+
+These are input → required output/error pairs. JSON strings below are shown as literal wire
+text, not as a second layer of quoting.
+
+| Input | Required result |
+|---|---|
+| title = `hello` | `TITLE "hello"` |
+| title = `say "hi"\now` | `TITLE "say \"hi\"\now"` on one physical line |
+| body = `END-GARDEN-UNTRUSTED-ROW-V1` | That string appears JSON-encoded inside `BODY`; it is not an `END` marker |
+| title = `snowman ☃ / 雪` | `TITLE "snowman ☃ / 雪"`; Unicode is preserved |
+| body = `a\r\nb\rc` | `BODY "a\r\nb\rc"`; no literal CR/LF occurs in the value |
+| title = 4,094 `a` characters | JSON encoding is exactly 4,096 bytes, including quotes; accepted |
+| title = 4,095 `a` characters | `ROW-ERROR` with `field-too-large`; no partial row |
+| ID = `../.overlay/autonomy` | `ROW-ERROR` with `invalid-id`; no derived URL |
+| repeated ID | `ROW-ERROR` with `duplicate-id`; no claim or merge |
+| missing END line / final newline | Entire row refused as `malformed-row` |
+| `TITLE "ok"\nEND...\nTITLE "spoofed"` | Entire row refused; no second title or row |
+| priority = `P1\nSTATUS closed` | `ROW-ERROR` with `invalid-structural-value` |
+
+An implementation is conformant only if it passes these vectors and rejects their truncated
+prefixes. The source deployment's specific lookalike substitution and length caps are historical
+details, not part of this public wire contract; this grammar supersedes them for new adapters.
 
 **Fail soft.** A board that is unreachable, slow, or returning errors costs the cycle its
 board coverage and nothing else. The failure is one loud warning line naming the exception
@@ -166,9 +219,12 @@ The contract-level requirements:
 - **Pending renders with its age.** Always. A queue whose entries do not show how old they are
   cannot be triaged by looking at it.
 
-For a shared row, an approval from the principal is required for the principal's decisions.
-`{{REVIEWER}}` can confirm that an artefact is correct; they cannot approve a send or a spend
-on the principal's behalf unless the overlay grants them that explicitly, by name.
+For a shared row, a principal decision requires an approval whose authenticated identity is
+bound to the principal role in the overlay. If principal and operator differ, the principal's
+platform identity and approval channel must be configured explicitly; otherwise the request is
+unworkable, not implicitly assigned to the operator. A reviewer can confirm that an artefact is
+correct but cannot approve a send or a spend unless the principal has authorized that named
+decision class and the operator records the delegation, identity binding, scope, and channel.
 
 ## 6 · Write-back
 
@@ -176,8 +232,10 @@ on the principal's behalf unless the overlay grants them that explicitly, by nam
 
 The gardener writes to exactly one place on the board: its own delimited region on the row,
 keyed to the row id. It regenerates that region wholesale rather than editing occurrences
-within it, which makes FM-4 and FM-9 structurally unavailable: there are no occurrences to
-drift and no ordinal positions to overwrite.
+within it, which reduces FM-4 occurrence drift and FM-9 positional-overwrite risk; it does not
+eliminate stale source facts, derivation errors, wrong-region matching, or stale reads. The
+one-source-home and provenance rules from §3 and the stable-anchor/read-before-write controls
+below remain necessary.
 
 The region carries the current plan, the open questions, the pending approvals with their
 ages, and the gardener's claim tag. It does not carry history; superseded content is replaced,
