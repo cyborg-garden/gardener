@@ -195,6 +195,34 @@ test('sync preserves global commit identity without other global config', () => 
   } finally { rmSync(parent, { recursive: true, force: true }); }
 });
 
+test('sync preserves included global commit identity without included executable config', () => {
+  const parent = scratch('garden-sync-included-identity-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    const home = join(parent, 'home');
+    const marker = join(parent, 'included-config-executed');
+    initRepo(root, remote);
+    git(root, 'config', '--unset', 'user.name');
+    git(root, 'config', '--unset', 'user.email');
+    mkdirSync(home);
+    writeFileSync(join(home, 'identity.inc'),
+      `[user]\n\tname = Included Operator\n\temail = operator@example.com\n[core]\n\teditor = touch ${marker}\n`);
+    writeFileSync(join(home, '.gitconfig'), '[include]\n\tpath = identity.inc\n');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'included\n');
+    const result = cli(root, parent, 'sync', { HOME: home, XDG_CONFIG_HOME: join(home, '.config') });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { committed: true, synced: true });
+    assert.equal(git(root, 'log', '-1', '--format=%an <%ae>').trim(),
+      'Included Operator <operator@example.com>');
+    assert.equal(existsSync(marker), false);
+    execFileSync('git', ['clone', '-q', remote, join(parent, 'clone')]);
+    assert.equal(readFileSync(join(parent, 'clone', 'state.md'), 'utf8'), 'included\n');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
 test('a clean conventional repository still performs a no-op sync', () => {
   const parent = scratch('garden-sync-noop-');
   try {
