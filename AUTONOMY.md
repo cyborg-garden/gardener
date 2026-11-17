@@ -93,14 +93,25 @@ filesystem attacker; use OS-level confinement when that is in the threat model.
 - **Sync is a separate state-changing capability.** It requires `act:contained` or
   higher (`garden-io:sync` in the overlay, or the trusted-caller override), not R0/R1.
   It refuses nested-repository discovery: the canonical Git top-level must equal the
-  configured garden root before staging. Staging is scoped to that root, and Git
-  environment configuration/global includes/editor execution are cleared for the
-  subprocess; only the operator's global `user.name` and `user.email` are retained
-  as commit identity. Staging and commit failures are explicit and never reported as a
-  successful synchronization or followed by pushing stale `HEAD`. An empty staged
-  diff is the only no-op path. Local `.git/config` remains operator-owned; arbitrary repository
-  configuration is not made safe by this check. Sync can commit and push, so it
-  belongs behind the same explicit grant and deployment isolation as other actions.
+  configured garden root before staging. Staging is scoped to that root. Both global
+  and system configuration, plus inherited Git config/environment overrides, are
+  cleared. The operator's literal local config is read without includes and must
+  contain only a small data-only subset: commit identity, remote URLs and fetch
+  refspec, current-branch upstream, and Git's non-executable repository defaults. Local includes, filters,
+  hook paths, transport commands, and other settings make sync fail closed before
+  staging or network access. Global `user.name` and `user.email` are retained,
+  including a matching `gitdir` conditional include, with local identity taking
+  precedence; no other global setting is imported. Transport-helper URLs such as
+  `ext::` are rejected, allowed protocols are pinned, and the remote and full remote
+  ref are independently validated. The current upstream is fetched and pushed using
+  explicit refspecs. Operator-owned default `.git/hooks` remain part of the trusted
+  launch configuration, but an agent-redirected hook path is refused. Staging and
+  commit failures are explicit and never reported as a successful synchronization or
+  followed by pushing stale `HEAD`. An empty staged diff is the only no-op path.
+  Local `.git/config` remains operator-owned; sync is deliberately limited to this
+  small structural subset, not arbitrary repository configuration. Sync can commit
+  and push, so it belongs behind the same explicit grant and deployment isolation as
+  other actions.
 - **A live, human-edited backend (e.g. Notion):** human-set fields are human-owned
   and refused above `propose`, regardless of what the loop asks. Low on the ladder,
   the only thing the gardener may write is a single agent-owned region (one "auto"

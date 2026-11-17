@@ -143,8 +143,8 @@ test('sync does not report success when commit identity is unavailable', () => {
       HOME: join(parent, 'empty-home'), XDG_CONFIG_HOME: join(parent, 'empty-config'),
     });
     assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /sync (add|commit) failed/);
-    assert.equal(git(root, 'status', '--porcelain'), 'A  state.md\n');
+    assert.match(result.stderr, /no Git commit identity configured|sync (add|commit) failed/);
+    assert.equal(git(root, 'status', '--porcelain'), '?? state.md\n');
     execFileSync('git', ['clone', '-q', remote, join(parent, 'clone')]);
     assert.equal(existsSync(join(parent, 'clone', 'state.md')), false);
   } finally { rmSync(parent, { recursive: true, force: true }); }
@@ -220,6 +220,404 @@ test('sync preserves included global commit identity without included executable
     assert.equal(existsSync(marker), false);
     execFileSync('git', ['clone', '-q', remote, join(parent, 'clone')]);
     assert.equal(readFileSync(join(parent, 'clone', 'state.md'), 'utf8'), 'included\n');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('R1 garden config cannot execute through a local include and filter during authorized sync', () => {
+  const parent = scratch('garden-sync-local-filter-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    git(root, 'config', 'include.path', 'agent-config');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'),
+      'rung: R1\ncapabilities:\n  garden-io:sync: act:contained\n');
+    const marker = join(parent, 'outside-filter-executed');
+    for (const [path, input] of [
+      ['payload.sh', `#!/bin/sh\nprintf executed > ${marker}\n`],
+      ['agent-config', `[filter "payload"]\n\tclean = /bin/sh ${root}/payload.sh\n`],
+      ['.gitattributes', '*.md filter=payload\n'],
+      ['state.md', 'filter must not execute\n'],
+    ]) {
+      const write = spawnSync(process.execPath, [CLI, 'write', path], {
+        input, encoding: 'utf8', env: { ...process.env, GARDEN_ROOT: root,
+          GARDEN_OVERLAY_ROOT: parent, GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+      });
+      assert.equal(write.status, 0, write.stderr);
+    }
+    chmodSync(join(root, 'payload.sh'), 0o755);
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported local Git configuration/);
+    assert.equal(existsSync(marker), false);
+    assert.throws(() => git(root, 'show', 'HEAD:state.md'));
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('R1 replacement of a configured in-garden hook cannot execute during authorized sync', () => {
+  const parent = scratch('garden-sync-local-hooks-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    git(root, 'config', 'core.hooksPath', 'agent-hooks');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'),
+      'rung: R1\ncapabilities:\n  garden-io:sync: act:contained\n');
+    const marker = join(parent, 'outside-hook-executed');
+    for (const [path, input] of [
+      ['agent-hooks/pre-commit', `#!/bin/sh\nprintf executed > ${marker}\n`],
+      ['state.md', 'hook must not execute\n'],
+    ]) {
+      const write = spawnSync(process.execPath, [CLI, 'write', path], {
+        input, encoding: 'utf8', env: { ...process.env, GARDEN_ROOT: root,
+          GARDEN_OVERLAY_ROOT: parent, GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+      });
+      assert.equal(write.status, 0, write.stderr);
+    }
+    chmodSync(join(root, 'agent-hooks/pre-commit'), 0o755);
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported local Git configuration/);
+    assert.equal(existsSync(marker), false);
+    assert.throws(() => git(root, 'show', 'HEAD:state.md'));
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('R1 included transport command cannot execute during authorized push', () => {
+  const parent = scratch('garden-sync-local-transport-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    git(root, 'config', 'include.path', 'agent-config');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'),
+      'rung: R1\ncapabilities:\n  garden-io:sync: act:contained\n');
+    const marker = join(parent, 'outside-transport-executed');
+    for (const [path, input] of [
+      ['payload.sh', `#!/bin/sh\nprintf executed > ${marker}\n`],
+      ['agent-config', `[core]\n\tsshCommand = /bin/sh ${root}/payload.sh\n`],
+    ]) {
+      const write = spawnSync(process.execPath, [CLI, 'write', path], {
+        input, encoding: 'utf8', env: { ...process.env, GARDEN_ROOT: root,
+          GARDEN_OVERLAY_ROOT: parent, GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+      });
+      assert.equal(write.status, 0, write.stderr);
+    }
+    chmodSync(join(root, 'payload.sh'), 0o755);
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported local Git configuration/);
+    assert.equal(existsSync(marker), false);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('sync retains gitdir-conditional global identity without included executable config', () => {
+  const parent = scratch('garden-sync-conditional-identity-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    const home = join(parent, 'home');
+    const marker = join(parent, 'conditional-config-executed');
+    initRepo(root, remote);
+    git(root, 'config', '--unset', 'user.name');
+    git(root, 'config', '--unset', 'user.email');
+    mkdirSync(home);
+    writeFileSync(join(home, 'identity.inc'),
+      `[user]\n\tname = Conditional Operator\n\temail = operator@example.com\n[core]\n\teditor = touch ${marker}\n`);
+    writeFileSync(join(home, '.gitconfig'),
+      `[includeIf "gitdir:${root}/"]\n\tpath = identity.inc\n`);
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'conditional\n');
+    const result = cli(root, parent, 'sync', {
+      HOME: home, XDG_CONFIG_HOME: join(home, '.config'),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { committed: true, synced: true });
+    assert.equal(git(root, 'log', '-1', '--format=%an <%ae>').trim(),
+      'Conditional Operator <operator@example.com>');
+    assert.equal(existsSync(marker), false);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('local identity takes precedence over global identity in neutral sync config', () => {
+  const parent = scratch('garden-sync-local-identity-precedence-');
+  try {
+    const root = join(parent, 'garden');
+    const home = join(parent, 'home');
+    initRepo(root, join(parent, 'remote.git'));
+    mkdirSync(home);
+    writeFileSync(join(home, '.gitconfig'), '[user]\n\tname = Global\n\temail = global@example.com\n');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'local wins\n');
+    const result = cli(root, parent, 'sync', { HOME: home, XDG_CONFIG_HOME: join(home, '.config') });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(git(root, 'log', '-1', '--format=%an <%ae>').trim(), 'Test <test@example.com>');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('local submodule mapping cannot make sync read an in-garden executable config', () => {
+  const parent = scratch('garden-sync-submodule-config-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    git(root, 'config', 'include.path', 'agent-config');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    const marker = join(parent, 'submodule-config-executed');
+    for (const [path, input] of [
+      ['payload.sh', `#!/bin/sh\nprintf executed > ${marker}\n`],
+      ['agent-config', `[filter "payload"]\n\tclean = /bin/sh ${root}/payload.sh\n`],
+      ['.gitmodules', '[submodule "nested"]\n\tpath = nested\n\turl = ../nested\n'],
+      ['.gitattributes', '*.md filter=payload\n'],
+      ['state.md', 'no submodule execution\n'],
+    ]) {
+      const write = spawnSync(process.execPath, [CLI, 'write', path], {
+        input, encoding: 'utf8', env: { ...process.env, GARDEN_ROOT: root,
+          GARDEN_OVERLAY_ROOT: parent, GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+      });
+      assert.equal(write.status, 0, write.stderr);
+    }
+    chmodSync(join(root, 'payload.sh'), 0o755);
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported local Git configuration/);
+    assert.equal(existsSync(marker), false);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('upstream ref cannot inject an upload-pack option through pull', () => {
+  const parent = scratch('garden-sync-upstream-option-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    const marker = join(parent, 'outside-option-executed');
+    const branch = '--upload-pack=' + join(root, 'payload.sh');
+    git(root, 'config', 'branch.master.merge', `refs/heads/${branch}`);
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    const write = spawnSync(process.execPath, [CLI, 'write', 'payload.sh'], {
+      input: `#!/bin/sh\nprintf executed > ${marker}\n`, encoding: 'utf8',
+      env: { ...process.env, GARDEN_ROOT: root, GARDEN_OVERLAY_ROOT: parent,
+        GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+    });
+    assert.equal(write.status, 0, write.stderr);
+    chmodSync(join(root, 'payload.sh'), 0o755);
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported upstream ref/);
+    assert.equal(existsSync(marker), false);
+    assert.throws(() => git(root, 'show', 'HEAD:payload.sh'));
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('ext transport URL cannot execute even when inherited protocol policy allows ext', () => {
+  const parent = scratch('garden-sync-ext-url-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    const marker = join(parent, 'outside-ext-executed');
+    git(root, 'config', 'remote.origin.url', `ext::${join(root, 'payload.sh')} %S foo`);
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    const write = spawnSync(process.execPath, [CLI, 'write', 'payload.sh'], {
+      input: `#!/bin/sh\nprintf executed > ${marker}\n`, encoding: 'utf8',
+      env: { ...process.env, GARDEN_ROOT: root, GARDEN_OVERLAY_ROOT: parent,
+        GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+    });
+    assert.equal(write.status, 0, write.stderr);
+    chmodSync(join(root, 'payload.sh'), 0o755);
+    const result = cli(root, parent, 'sync', { GIT_ALLOW_PROTOCOL: 'ext' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported remote URL/);
+    assert.equal(existsSync(marker), false);
+    assert.throws(() => git(root, 'show', 'HEAD:payload.sh'));
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('ext push URL is rejected before staging or execution', () => {
+  const parent = scratch('garden-sync-ext-pushurl-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    const marker = join(parent, 'outside-ext-push-executed');
+    git(root, 'config', 'remote.origin.pushurl', `ext::${join(root, 'payload.sh')} %S foo`);
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    const write = spawnSync(process.execPath, [CLI, 'write', 'payload.sh'], {
+      input: `#!/bin/sh\nprintf executed > ${marker}\n`, encoding: 'utf8',
+      env: { ...process.env, GARDEN_ROOT: root, GARDEN_OVERLAY_ROOT: parent,
+        GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+    });
+    assert.equal(write.status, 0, write.stderr);
+    chmodSync(join(root, 'payload.sh'), 0o755);
+    const result = cli(root, parent, 'sync', { GIT_ALLOW_PROTOCOL: 'ext' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsupported remote URL/);
+    assert.equal(existsSync(marker), false);
+    assert.throws(() => git(root, 'show', 'HEAD:payload.sh'));
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('slash-named remote sync succeeds using the exact configured upstream', () => {
+  const parent = scratch('garden-sync-slash-remote-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    git(root, 'remote', 'rename', 'origin', 'upstream/team');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'slash remote\n');
+    const result = cli(root, parent, 'sync');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { committed: true, synced: true });
+    const clone = join(parent, 'clone');
+    execFileSync('git', ['clone', '-q', remote, clone]);
+    assert.equal(readFileSync(join(clone, 'state.md'), 'utf8'), 'slash remote\n');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('fast-forward upstream changes are integrated before the local push', () => {
+  const parent = scratch('garden-sync-fast-forward-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    const clone = join(parent, 'other');
+    execFileSync('git', ['clone', '-q', remote, clone]);
+    git(clone, 'config', 'user.name', 'Other');
+    git(clone, 'config', 'user.email', 'other@example.com');
+    writeFileSync(join(clone, 'other.md'), 'other\n');
+    git(clone, 'add', 'other.md');
+    git(clone, 'commit', '-qm', 'other');
+    git(clone, 'push', '-q', 'origin', 'HEAD');
+    git(root, 'fetch', '-q', 'origin', 'master');
+    git(root, 'merge', '--ff-only', '-q', 'FETCH_HEAD');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'local\n');
+    const result = cli(root, parent, 'sync');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { committed: true, synced: true });
+    const verify = join(parent, 'verify');
+    execFileSync('git', ['clone', '-q', remote, verify]);
+    assert.equal(readFileSync(join(verify, 'state.md'), 'utf8'), 'local\n');
+    assert.equal(readFileSync(join(verify, 'other.md'), 'utf8'), 'other\n');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('divergent upstream history is not published or reported as synchronized', () => {
+  const parent = scratch('garden-sync-divergent-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    const clone = join(parent, 'other');
+    execFileSync('git', ['clone', '-q', remote, clone]);
+    git(clone, 'config', 'user.name', 'Other');
+    git(clone, 'config', 'user.email', 'other@example.com');
+    writeFileSync(join(clone, 'other.md'), 'other\n');
+    git(clone, 'add', 'other.md');
+    git(clone, 'commit', '-qm', 'other');
+    git(clone, 'push', '-q', 'origin', 'HEAD');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'local\n');
+    const result = cli(root, parent, 'sync');
+    assert.equal(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout);
+    assert.equal(parsed.committed, true);
+    assert.equal(parsed.synced, false);
+    assert.equal(git(root, 'status', '--porcelain'), '');
+    const verify = join(parent, 'verify');
+    execFileSync('git', ['clone', '-q', remote, verify]);
+    assert.equal(existsSync(join(verify, 'state.md')), false);
+    assert.equal(readFileSync(join(verify, 'other.md'), 'utf8'), 'other\n');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('detached HEAD and non-repository gardens return explicit non-success results', () => {
+  const parent = scratch('garden-sync-preflight-results-');
+  try {
+    const root = join(parent, 'garden');
+    initRepo(root, join(parent, 'remote.git'));
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'unstaged\n');
+    git(root, 'checkout', '-q', '--detach');
+    const detached = cli(root, parent, 'sync');
+    assert.equal(detached.status, 0, detached.stderr);
+    assert.deepEqual(JSON.parse(detached.stdout), {
+      committed: false, synced: false, reason: 'detached-head',
+    });
+    assert.equal(git(root, 'status', '--porcelain'), '?? state.md\n');
+    const plain = join(parent, 'plain');
+    mkdirSync(plain);
+    writeFileSync(join(plain, 'state.md'), 'unstaged\n');
+    const missing = cli(plain, parent, 'sync');
+    assert.equal(missing.status, 0, missing.stderr);
+    assert.deepEqual(JSON.parse(missing.stdout), {
+      committed: false, synced: false, reason: 'not-a-repo',
+    });
+    assert.equal(existsSync(join(plain, '.git')), false);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('empty duplicate remote and merge values cannot bypass upstream cardinality', () => {
+  for (const field of ['remote', 'merge']) {
+    const parent = scratch(`garden-sync-empty-${field}-`);
+    try {
+      const root = join(parent, 'garden');
+      const remote = join(parent, 'remote.git');
+      initRepo(root, remote);
+      if (field === 'merge') {
+        git(root, 'config', 'branch.master.merge', 'refs/heads/unrelated');
+        git(root, 'push', '-q', 'origin', 'HEAD:refs/heads/unrelated');
+      }
+      git(root, 'config', '--add', `branch.master.${field}`, '');
+      const beforeMaster = git(root, 'rev-parse', 'origin/master').trim();
+      mkdirSync(join(parent, '.overlay'));
+      writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+      writeFileSync(join(root, 'state.md'), 'must not publish\n');
+      const result = cli(root, parent, 'sync');
+      assert.notEqual(result.status, 0, `${field}: ${result.stdout}`);
+      assert.match(result.stderr, /unsupported upstream configuration/);
+      assert.equal(git(root, 'status', '--porcelain'), '?? state.md\n');
+      assert.equal(git(root, 'rev-parse', 'origin/master').trim(), beforeMaster);
+      if (field === 'merge') {
+        assert.equal(git(root, 'rev-parse', 'origin/unrelated').trim(), beforeMaster);
+      }
+    } finally { rmSync(parent, { recursive: true, force: true }); }
+  }
+});
+
+test('case-distinct branch sections cannot synthesize an upstream or publish another ref', () => {
+  const parent = scratch('garden-sync-case-split-upstream-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    git(root, 'config', 'branch.master.remote', 'origin');
+    git(root, 'config', '--unset', 'branch.master.merge');
+    git(root, 'config', 'branch.Master.merge', 'refs/heads/unrelated');
+    git(root, 'push', '-q', 'origin', 'HEAD:refs/heads/unrelated');
+    const before = git(root, 'rev-parse', 'HEAD').trim();
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'must not publish\n');
+    const result = cli(root, parent, 'sync');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      committed: true, synced: false, reason: 'no upstream configured',
+    });
+    assert.equal(git(root, 'rev-parse', 'origin/master').trim(), before);
+    assert.equal(git(root, 'rev-parse', 'origin/unrelated').trim(), before);
+    const clone = join(parent, 'clone');
+    execFileSync('git', ['clone', '-q', remote, clone]);
+    assert.equal(existsSync(join(clone, 'state.md')), false);
   } finally { rmSync(parent, { recursive: true, force: true }); }
 });
 
