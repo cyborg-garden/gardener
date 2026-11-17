@@ -103,10 +103,12 @@ filesystem attacker; use OS-level confinement when that is in the threat model.
   including a matching `gitdir` conditional include, with local identity taking
   precedence; no other global setting is imported. Transport-helper URLs such as
   `ext::` are rejected, allowed protocols are pinned, and the remote and full remote
-  ref are independently validated. The current upstream is fetched and pushed using
-  explicit refspecs. Operator-owned default `.git/hooks` remain part of the trusted
-  launch configuration, but an agent-redirected hook path is refused. Staging and
-  commit failures are explicit and never reported as a successful synchronization or
+  ref are independently validated. A local or `file://` upstream is allowed only when
+  its canonical Git directory is outside the garden; symlink aliases cannot turn an
+  in-garden bare repository with R1-writable receive hooks into a sync target. The
+  current upstream is fetched and pushed using explicit refspecs. Operator-owned
+  default `.git/hooks` remain part of the trusted launch configuration, but an
+  agent-redirected hook path is refused. Staging and commit failures are explicit and never reported as a successful synchronization or
   followed by pushing stale `HEAD`. An empty staged diff is the only no-op path.
   Local `.git/config` remains operator-owned; sync is deliberately limited to this
   small structural subset, not arbitrary repository configuration. Sync can commit
