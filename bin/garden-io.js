@@ -5,8 +5,10 @@ import { loadAutonomy } from '../lib/autonomy.js';
 
 const argv = process.argv.slice(2);
 
-// `--authority <a>` is the explicit, per-invocation declaration. Everything else is
-// resolved below; nothing is assumed.
+// `--authority <a>` is a TRUSTED-CALLER DECLARATION, not an authenticated grant.
+// Anyone controlling process arguments or its environment can assert a higher rung.
+// It exists for an operator or embedding harness that already sits inside the trust
+// boundary, never as proof to an untrusted agent that the operator approved a rung.
 //
 // The flag is accepted on *either* side of the operation. The usage string below has
 // always documented the leading form — `garden-io [--authority <a>] <op> ...` — but the
@@ -42,6 +44,9 @@ const nonEmpty = v => (v === undefined || v === '' ? undefined : v);
 const authority = nonEmpty(flagAuthority)
   ?? nonEmpty(process.env.GARDEN_AUTHORITY)
   ?? loadAutonomy(process.env.GARDEN_OVERLAY_ROOT || process.cwd()).authorityFor('garden-io');
+const syncAuthority = nonEmpty(flagAuthority)
+  ?? nonEmpty(process.env.GARDEN_AUTHORITY)
+  ?? loadAutonomy(process.env.GARDEN_OVERLAY_ROOT || process.cwd()).authorityFor('garden-io:sync');
 
 const io = new GardenIO();
 
@@ -86,7 +91,7 @@ const ops = {
     if (!args[0]) bail('resolve requires a ref argument');
     const r = io.resolve(args[0]); if (!r) process.exit(1); process.stdout.write(JSON.stringify(r) + '\n');
   },
-  sync: () => { process.stdout.write(JSON.stringify(io.sync()) + '\n'); },
+  sync: () => { process.stdout.write(JSON.stringify(io.sync({ authority: syncAuthority })) + '\n'); },
 };
 
 try {

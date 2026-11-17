@@ -63,6 +63,17 @@ operator's overlay grants (defaulting to R0), `Autonomy#canAct()` is the act-gat
 and `writeAllowed(authority, region)` is the write-policy a driver enforces in its
 `write()` via its declared `regionOf()`.
 
+Path scope is part of that boundary, not a convenience: the git driver confines every
+read, write, and list to the configured garden root, refuses `..` and absolute-path
+escapes, and resolves the deepest existing ancestor so a symlink (including a symlinked
+directory with a not-yet-created file beneath it) cannot redirect an operation outside
+the root. The configured root itself must be a real directory, not a symlink. A missing
+garden is still created lazily by its first valid write. This is a filesystem boundary
+for the driver, not a general OS sandbox: an agent with an unrestricted shell or another
+writable mount must be isolated separately, and the overlay should be mounted read-only
+to the agent as well. Path checks are not a race-proof defence against a concurrent
+filesystem attacker; use OS-level confinement when that is in the threat model.
+
 - **Git driver:** git history is reversible and it declares no human region, so once
   the operator has granted `propose` or above every path it owns is writable and the
   act-gate does the interesting work. "Permissive about regions" is not "permissive
@@ -71,6 +82,38 @@ and `writeAllowed(authority, region)` is the write-policy a driver enforces in i
   (`new GardenIO({ authority })`), or via `GARDEN_AUTHORITY`; resolve it from the
   overlay with `loadAutonomy(root).authorityFor(capability)`, which fails closed to R0.
   `bin/garden-io.js` does exactly that, and accepts `--authority` to override.
+- **Git metadata is not a document.** Agent read/write/list operations refuse `.git`
+  paths and omit them from recursive listings. Only the operator may configure Git;
+  no garden document is allowed to become repository configuration, a hook, or a
+  remote URL. The guard checks the canonical target against the actual Git
+  directory, so aliases and renamed metadata do not bypass it. Only a conventional,
+  operator-owned real `<garden>/.git` directory is supported: symlinked or pointer
+  markers, separate metadata, and `commondir` redirection fail closed for storage
+  operations as well as sync, rather than being mistaken for an absent repository.
+- **Sync is a separate state-changing capability.** It requires `act:contained` or
+  higher (`garden-io:sync` in the overlay, or the trusted-caller override), not R0/R1.
+  It refuses nested-repository discovery: the canonical Git top-level must equal the
+  configured garden root before staging. Staging is scoped to that root. Both global
+  and system configuration, plus inherited Git config/environment overrides, are
+  cleared. The operator's literal local config is read without includes and must
+  contain only a small data-only subset: commit identity, remote URLs and fetch
+  refspec, current-branch upstream, and Git's non-executable repository defaults. Local includes, filters,
+  hook paths, transport commands, and other settings make sync fail closed before
+  staging or network access. Global `user.name` and `user.email` are retained,
+  including a matching `gitdir` conditional include, with local identity taking
+  precedence; no other global setting is imported. Transport-helper URLs such as
+  `ext::` are rejected, allowed protocols are pinned, and the remote and full remote
+  ref are independently validated. A local or `file://` upstream is allowed only when
+  its canonical Git directory is outside the garden; symlink aliases cannot turn an
+  in-garden bare repository with R1-writable receive hooks into a sync target. The
+  current upstream is fetched and pushed using explicit refspecs. Operator-owned
+  default `.git/hooks` remain part of the trusted launch configuration, but an
+  agent-redirected hook path is refused. Staging and commit failures are explicit and never reported as a successful synchronization or
+  followed by pushing stale `HEAD`. An empty staged diff is the only no-op path.
+  Local `.git/config` remains operator-owned; sync is deliberately limited to this
+  small structural subset, not arbitrary repository configuration. Sync can commit
+  and push, so it belongs behind the same explicit grant and deployment isolation as
+  other actions.
 - **A live, human-edited backend (e.g. Notion):** human-set fields are human-owned
   and refused above `propose`, regardless of what the loop asks. Low on the ladder,
   the only thing the gardener may write is a single agent-owned region (one "auto"
@@ -160,6 +203,14 @@ upstream never ships:
 
 - `.overlay/autonomy.yml` — the rung + per-capability authority overrides.
 - `.overlay/grants/<capability>` — one file per sharp-edge grant (presence = granted).
+
+The overlay is configuration, not an authentication mechanism for its caller. The CLI's
+`--authority` flag and `GARDEN_AUTHORITY` environment variable are **trusted-caller
+declarations**, not operator grants: anyone who can choose the process's arguments or
+environment can assert a higher rung. They take precedence over the overlay for compatibility
+with an operator or embedding harness, so they must never be exposed to an untrusted agent.
+Likewise, an agent that can modify its overlay can rewrite its own grant; mount it read-only
+and isolate the process and other writable paths at the OS boundary when that matters.
 
 Because grants live in the overlay, pulling substrate updates from upstream
 (`garden-io update`, when it lands) never raises or lowers your autonomy, and forking
