@@ -694,6 +694,96 @@ test('colon-bearing local paths cannot bypass the in-garden remote boundary', ()
   }
 });
 
+test('case-distinct remote URL cannot validate an in-garden fallback path', () => {
+  const parent = scratch('garden-sync-case-remote-fallback-');
+  try {
+    const root = join(parent, 'garden');
+    const outside = join(parent, 'outside.git');
+    const remote = join(root, 'remote.git');
+    initRepo(root, outside);
+    execFileSync('git', ['init', '-q', '--bare', remote]);
+    git(root, 'push', '-q', remote, 'HEAD:refs/heads/master');
+    git(root, 'remote', 'remove', 'origin');
+    git(root, 'config', 'remote.Remote.git.url', outside);
+    git(root, 'config', 'branch.master.remote', 'remote.git');
+    git(root, 'config', 'branch.master.merge', 'refs/heads/master');
+    const before = git(root, '--git-dir=remote.git', 'rev-parse', 'refs/heads/master').trim();
+    const marker = join(parent, 'outside-case-remote-executed');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    const hook = 'remote.git/hooks/pre-receive';
+    writeFileSync(join(root, hook), '#!/bin/sh\nexit 0\n');
+    chmodSync(join(root, hook), 0o755);
+    const write = spawnSync(process.execPath, [CLI, 'write', hook], {
+      input: `#!/bin/sh\nprintf executed > ${marker}\n`, encoding: 'utf8',
+      env: { ...process.env, GARDEN_ROOT: root, GARDEN_OVERLAY_ROOT: parent,
+        GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+    });
+    assert.equal(write.status, 0, write.stderr);
+    chmodSync(join(root, hook), 0o755);
+    writeFileSync(join(root, 'state.md'), 'must not publish\n');
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /upstream remote has no URL/);
+    assert.equal(existsSync(marker), false);
+    assert.doesNotMatch(git(root, 'status', '--porcelain'), /^A/m);
+    assert.equal(git(root, '--git-dir=remote.git', 'rev-parse', 'refs/heads/master').trim(), before);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('mixed-case exact remote configuration publishes to its outside URL', () => {
+  const parent = scratch('garden-sync-exact-case-remote-');
+  try {
+    const root = join(parent, 'garden');
+    const remote = join(parent, 'remote.git');
+    initRepo(root, remote);
+    git(root, 'remote', 'rename', 'origin', 'UpstreamTeam');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    writeFileSync(join(root, 'state.md'), 'exact case remote\n');
+    const result = cli(root, parent, 'sync');
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { committed: true, synced: true });
+    const clone = join(parent, 'clone');
+    execFileSync('git', ['clone', '-q', remote, clone]);
+    assert.equal(readFileSync(join(clone, 'state.md'), 'utf8'), 'exact case remote\n');
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
+test('exact-case in-garden push URL cannot bypass destination validation', () => {
+  const parent = scratch('garden-sync-case-remote-pushurl-');
+  try {
+    const root = join(parent, 'garden');
+    const outside = join(parent, 'outside.git');
+    const remote = join(root, 'remote.git');
+    initRepo(root, outside);
+    execFileSync('git', ['init', '-q', '--bare', remote]);
+    git(root, 'push', '-q', remote, 'HEAD:refs/heads/master');
+    git(root, 'config', 'remote.origin.pushurl', remote);
+    const before = git(root, '--git-dir=remote.git', 'rev-parse', 'refs/heads/master').trim();
+    const marker = join(parent, 'outside-case-pushurl-executed');
+    mkdirSync(join(parent, '.overlay'));
+    writeFileSync(join(parent, '.overlay', 'autonomy.yml'), 'rung: R2\n');
+    const hook = 'remote.git/hooks/pre-receive';
+    writeFileSync(join(root, hook), '#!/bin/sh\nexit 0\n');
+    chmodSync(join(root, hook), 0o755);
+    const write = spawnSync(process.execPath, [CLI, 'write', hook], {
+      input: `#!/bin/sh\nprintf executed > ${marker}\n`, encoding: 'utf8',
+      env: { ...process.env, GARDEN_ROOT: root, GARDEN_OVERLAY_ROOT: parent,
+        GARDEN_AUTHORITY: '', GARDEN_SYNC: 'on' },
+    });
+    assert.equal(write.status, 0, write.stderr);
+    chmodSync(join(root, hook), 0o755);
+    writeFileSync(join(root, 'state.md'), 'must not publish\n');
+    const result = cli(root, parent, 'sync');
+    assert.notEqual(result.status, 0, result.stdout);
+    assert.match(result.stderr, /remote.*inside.*garden/);
+    assert.equal(existsSync(marker), false);
+    assert.equal(git(root, '--git-dir=remote.git', 'rev-parse', 'refs/heads/master').trim(), before);
+    assert.throws(() => git(root, 'show', 'HEAD:state.md'));
+  } finally { rmSync(parent, { recursive: true, force: true }); }
+});
+
 test('an outside symlink to an in-garden remote is refused by canonical target', () => {
   const parent = scratch('garden-sync-remote-alias-');
   try {
