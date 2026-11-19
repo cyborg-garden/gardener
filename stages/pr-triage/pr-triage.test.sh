@@ -253,6 +253,19 @@ covered by later work' PR_TRIAGE_LLM_CMD="${TMP}/bin/llm" PR_TRIAGE_LLM_MAX=10 P
 check "partly landed + llm yes -> CLOSE AS SUPERSEDED" "row \"\$O6\" acme/app#5 | grep -q 'CLOSE AS SUPERSEDED'"
 check "close of #5 is a decision, never an action" "printf '%s' \"\$O6\" | grep -q 'Close acme/app#5 as superseded?' && ! grep -q FORBIDDEN \"$CALLS.writes\""
 
+O6b="$(run PR_TRIAGE_REPOS=acme/app PR_TRIAGE_CONTENT_MAX=0)"
+check "content budget 0 -> no contents calls, no supersession claim" "! grep -q '/contents/' \"$CALLS\" && ! row \"\$O6b\" acme/app#4 | grep -q 'CLOSE AS SUPERSEDED' && printf '%s' \"\$O6b\" | grep -q 'content check capped'"
+jq -n '{truncated:false, tree:[{path:"src/a.js",type:"blob",sha:"blobA"},{path:"src/b.js",type:"blob",sha:"old"},{path:"src",type:"tree",sha:"t"}]}' \
+  > "$(fx api "repos/acme/app/git/trees/main?recursive=1")"
+O6c="$(run PR_TRIAGE_REPOS=acme/app)"
+check "tree listing answers content checks (no per-file calls)" "! grep -q '/contents/' \"$CALLS\" && [ \"\$(grep -c 'git/trees' \"$CALLS\")\" = 1 ]"
+check "tree path: landed PR still superseded" "row \"\$O6c\" acme/app#4 | grep -q 'CLOSE AS SUPERSEDED'"
+check "tree path: unlanded PR is not" "! row \"\$O6c\" acme/app#6 | grep -q 'CLOSE AS SUPERSEDED'"
+jq -n '{truncated:true, tree:[]}' > "$(fx api "repos/acme/app/git/trees/main?recursive=1")"
+O6d="$(run PR_TRIAGE_REPOS=acme/app)"
+check "truncated tree -> per-file fallback, same verdict" "grep -q '/contents/' \"$CALLS\" && row \"\$O6d\" acme/app#4 | grep -q 'CLOSE AS SUPERSEDED'"
+rm -f "$(fx api "repos/acme/app/git/trees/main?recursive=1")"
+
 echo "7. refusal and partial coverage"
 O7="$(run FAKE_AUTH_FAIL=1)"; RC7=$?
 check "unauthenticated -> exit 2" "[ $RC7 -eq 2 ] && printf '%s' \"\$O7\" | grep -q 'REFUSED pr-triage'"

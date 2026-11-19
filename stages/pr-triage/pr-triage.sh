@@ -78,6 +78,7 @@
 #   PR_TRIAGE_LLM_MAX          LLM calls per run (default 3)
 #   PR_TRIAGE_LLM_TIMEOUT      seconds per LLM call (default 600)
 #   PR_TRIAGE_FILES_MAX        files content-checked per PR (default 50)
+#   PR_TRIAGE_CONTENT_MAX      PRs content-checked per run (default 25; rotates)
 # Needs bash 3.2+, jq, gh.
 set -uo pipefail
 
@@ -93,6 +94,7 @@ STALE_DAYS="${PR_TRIAGE_STALE_DAYS:-30}"
 LLM_MAX="${PR_TRIAGE_LLM_MAX:-3}"
 LLM_TIMEOUT="${PR_TRIAGE_LLM_TIMEOUT:-600}"
 FILES_MAX="${PR_TRIAGE_FILES_MAX:-50}"
+CONTENT_MAX="${PR_TRIAGE_CONTENT_MAX:-25}"
 UNASKED=" ${PR_TRIAGE_UNASKED_SEVERITIES-critical} "
 TRUST_ORGS="${PR_TRIAGE_TRUST_ORGS:-}"
 AGENT_LABEL="${PR_TRIAGE_AGENT_LABEL:-agent}"
@@ -310,9 +312,23 @@ content_landed() {  # slug n base -> sets LANDED and LTOTAL (LANDED "?" when unk
            | jq -r '.[] | [.filename, .status, (.sha // "")] | @tsv' 2>/dev/null)" || return 0
   cnt="$(printf '%s\n' "$files" | grep -c .)"
   [ "$cnt" -gt 0 ] && [ "$cnt" -le "$FILES_MAX" ] || { LTOTAL="$cnt"; return 0; }
-  LTOTAL="$cnt"; local landed=0
+  LTOTAL="$cnt"; local landed=0 tree
+  # One recursive tree listing per repo+base answers every file at once; the
+  # per-file contents call below is the fallback (listing failed or truncated).
+  tree="${TMPD}/tree-$(printf '%s-%s' "$slug" "$base" | LC_ALL=C tr -c 'A-Za-z0-9._-' '_')"
+  if [ ! -f "$tree" ] && [ ! -f "$tree.none" ]; then
+    "$GH" api "repos/$slug/git/trees/$(urienc "$base")?recursive=1" 2>/dev/null \
+      | jq -r 'if .truncated == false then (.tree[] | select(.type == "blob") | "\(.path)\t\(.sha)") else error("truncated") end' \
+      > "$tree" 2>/dev/null || { rm -f "$tree"; : > "$tree.none"; }
+  fi
   while IFS="$(printf '\t')" read -r fn st hsha; do
     [ -z "$fn" ] && continue
+    if [ -f "$tree" ]; then
+      bsha="$(awk -F'\t' -v p="$fn" '$1 == p { print $2; exit }' "$tree")"
+      if [ "$st" = "removed" ]; then [ -z "$bsha" ] && landed=$((landed+1))
+      else [ -n "$hsha" ] && [ "$bsha" = "$hsha" ] && landed=$((landed+1)); fi
+      continue
+    fi
     err="${TMPD}/err"
     bsha="$("$GH" api "repos/$slug/contents/$(pathenc "$fn")?ref=$(urienc "$base")" 2>"$err" | jq -r '.sha // empty' 2>/dev/null)"
     if [ "$st" = "removed" ]; then
@@ -357,6 +373,7 @@ rebase_requested_recently() {  # slug n -> 0 if "@dependabot rebase" was comment
 # Walk the PRs, rotated by day so a capped LLM budget reaches every PR in turn.
 # ---------------------------------------------------------------------------
 TOTAL="$(grep -c . "$ALL")"
+CONTENT_USED=0
 OFFSET=0; [ "$TOTAL" -gt 0 ] && OFFSET=$(( (NOW / 86400) % TOTAL ))
 i=0
 while [ "$i" -lt "$TOTAL" ]; do
@@ -479,8 +496,13 @@ Reply with EXACTLY ONE line at the start: SUPPLY_VERDICT=pass  (or fail), then o
     [ "$(printf '%s' "$pr" | jq -r 'if .isCrossRepository == false then "no" else "yes" end')" = "yes" ] && trust="EXTERNAL"
     printf '%s' "$pr" | jq -e --arg l "$AGENT_LABEL" '[.labels[]?.name] | index($l)' >/dev/null 2>&1 && note="$note agent-authored (human merges);"
     age="$(days_since "$(printf '%s' "$pr" | jq -r '.updatedAt // ""')")"
-    content_landed "$slug" "$n" "$base"
-    note="$note content on base: ${LANDED}/$LTOTAL files;"
+    if [ "$CONTENT_USED" -lt "$CONTENT_MAX" ]; then
+      CONTENT_USED=$((CONTENT_USED+1))
+      content_landed "$slug" "$n" "$base"
+      note="$note content on base: ${LANDED}/$LTOTAL files;"
+    else
+      LANDED="?"; LTOTAL="?"; note="$note content check capped this run (rotates);"
+    fi
     if [ "$LANDED" != "?" ] && [ "$LTOTAL" != "?" ] && [ "$LTOTAL" -gt 0 ] && [ "$LANDED" = "$LTOTAL" ]; then
       verdict="CLOSE AS SUPERSEDED"
       draft_decision "$slug" "$n" "Close $ref as superseded?" \
