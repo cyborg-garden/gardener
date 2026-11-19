@@ -13,14 +13,14 @@ implement these contracts.
 
 ## Documents
 
-- **[Graduated autonomy](graduated-autonomy.md)** — maps research, drafting, board writes,
+- **[Graduated autonomy](graduated-autonomy.md)** maps research, drafting, board writes,
   outbound correspondence, spending, and scheduling onto the core autonomy dials. It separates
   reversible drafting from irreversible external action and explains why scheduling multiplies,
   rather than grants, authority.
-- **[Failure modes](failure-modes.md)** — seventeen observed failures, their detection signals,
+- **[Failure modes](failure-modes.md)** catalogs seventeen observed failures, their detection signals,
   and countermeasures. It includes absence failures: expired approvals, lost scheduled runs, and
   capabilities that disappear while the status surface still looks healthy.
-- **[Non-code task contract](task-contract.md)** — a proposed task lane covering explicit
+- **[Non-code task contract](task-contract.md)** proposes a task lane covering explicit
   assignment, a normative JSON-encoded untrusted-row wire format, evidence-backed plans,
   role-bound per-action approvals with loud expiry, and read-back-verified writes.
 
