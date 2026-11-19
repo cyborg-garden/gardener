@@ -13,8 +13,8 @@ finding. Particulars are replaced using the glossary in `README.md`.
 > **Status:** this is a catalog, not a test suite. Of the countermeasures listed, a small
 > number were actually applied to the deployment (marked **applied**), a larger number were
 > written into the agent's own memory as practice and therefore hold only as well as prose
-> holds (**practice**), and the rest were never applied at all (**unapplied**). The honest
-> reading of this document is that naming a failure is the cheap half.
+> holds (**practice**), and the rest were never applied at all (**unapplied**). Read the
+> catalog with that in mind: naming a failure is the cheap half.
 
 ## Two things visible only in aggregate
 
@@ -28,7 +28,7 @@ the person was busy the failures shipped.
 **Corrections landed as data edits, not as checks.** Nearly every fix in this ledger was a
 correction to the artefact that was wrong: the count restated, the page rewritten, the line
 amended. Only the transport-layer bugs (FM-14) produced code that would catch the next
-instance. This is the ledger's own bias and it is worth naming, because a catalog of
+instance. That is the ledger's own bias, and it matters, because a catalog of
 failures whose fixes are all data edits is a catalog that will grow at the same rate next
 month.
 
@@ -161,7 +161,7 @@ scope. Trust in every subsequent estimate degrades.
 backed by an enumeration is not offered. Where the agent has not itself traversed the flow it
 is handing over, it says the estimate is unverified.
 
-There is a self-serving gradient here worth naming: understating handoff cost makes the
+There is a self-serving gradient here: understating handoff cost makes the
 agent's own plan look better. A countermeasure that relies on the agent's judgment about its
 own convenience is weak by construction, which is why the enumeration is the requirement
 rather than the estimate.
@@ -338,7 +338,7 @@ about ten lines of work and would have caught every instance. Status fields that
 healthy must be accompanied by a retained failure history; a status that cannot express "has
 failed recently" is not a status.
 
-Related and worth stating separately: a configured restraint with a zero firing rate is not
+A separate, related rule: a configured restraint with a zero firing rate is not
 evidence of good behavior. The deployment's quiet-day opt-out appeared in the instructions
 for every run and in the output of none, over forty-five runs. Either the condition never
 occurred, which is itself surprising and worth knowing, or the restraint does not work. Both

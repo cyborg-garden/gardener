@@ -19,7 +19,7 @@ moves one up a notch.
 
 ## Why this domain is harder than code
 
-[`AUTONOMY.md`](../../AUTONOMY.md) §"Gating a promotion" names the crux directly: code-shaped capabilities have a
+[`AUTONOMY.md`](../../AUTONOMY.md) §"Gating a promotion" states the core difference: code-shaped capabilities have a
 deterministic correctness signal, and non-code-shaped ones do not. There is no green build
 for "researched the right flights" or "drafted the right email." The substitutes it offers
 are a human-approved pattern, a dry-run diff, and strict reversibility.
@@ -224,7 +224,7 @@ language lived in its own memory store, on a read-write mount, with self-directe
 writing enabled and no deny rule covering that path. It never abused this. That is not the
 point; the point is that the arrangement made the grant advisory.
 
-Two consequences worth stating plainly:
+Two consequences follow:
 
 - Autonomy language belongs in the overlay, mounted read-only to the agent, separate from any
   memory the agent maintains about itself. The storage boundary is specified in
@@ -253,6 +253,6 @@ handling is unimplemented. A scheduled capability may not be granted `unattended
 FM-13's expected-versus-produced reconciliation does not exist, because unattended is exactly
 the condition under which a silent run loss goes unseen.
 
-This is the honest version of "climb deliberately." The ladder in this domain is not gated on
+This is what "climb deliberately" means here. The ladder in this domain is not gated on
 the agent behaving well for long enough. It is gated on the operator building the thing that
 would notice if it did not.

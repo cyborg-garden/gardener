@@ -1,7 +1,7 @@
 # 🌱 Gardener
 
-A portable memory + coordination substrate you hand to your agent. Handoffs, knowledge, and a
-task board your agent can tend — markdown + git by default, adaptable to your stack.
+A portable memory and coordination substrate you hand to your agent: handoffs, knowledge, and a
+task board your agent can tend. It runs on markdown and git by default and adapts to your stack.
 
 **Early release: storage and safety primitives, not an autonomous tending service.** The CLI,
 format validator, and fail-closed autonomy controls run today. A resident tending loop, rubric
@@ -25,8 +25,9 @@ directory):
 GARDEN_ROOT="${PWD}/garden" node bin/garden-io.js read state/threads.md
 ```
 
-A write with no declared authority is refused. For a scratch installation, set **both** roots to
-absolute paths in the same disposable parent directory and disable git sync:
+A write with no declared authority is refused. To try writes safely, make a scratch installation.
+Set **both** `GARDEN_ROOT` and `GARDEN_OVERLAY_ROOT` to absolute paths in the same disposable
+parent directory, and set `GARDEN_SYNC=off` so nothing is committed:
 
 ```sh
 SCRATCH_DIR="$(mktemp -d)"
@@ -51,11 +52,9 @@ printf '# Board\n\n## Now\n- [ ] #first Tend the garden\n' \
 node bin/garden-io.js read state/threads.md
 ```
 
-For a scratch installation, set **both** `GARDEN_ROOT` and `GARDEN_OVERLAY_ROOT` to absolute
-paths in the same disposable parent directory, and set `GARDEN_SYNC=off` to avoid commits. Set
-these on every new shell rather than relying on an earlier working directory or overlay
-location. Do not experiment against your real board. See [`AUTONOMY.md`](AUTONOMY.md) before
-granting a higher rung or unattended execution.
+Export the scratch variables again in every new shell rather than relying on an earlier
+working directory or overlay location. Do not experiment against your real board. See
+[`AUTONOMY.md`](AUTONOMY.md) before granting a higher rung or unattended execution.
 
 **Caller trust boundary:** `--authority` and `GARDEN_AUTHORITY` are declarations by a trusted
 operator or embedding harness, **not authenticated grants**. Anyone who can choose the process's
@@ -77,19 +76,19 @@ not turn an unrestricted shell account into a sandbox.
 
 ## Read next
 
-- [`SPEC.md`](SPEC.md) — the garden format: board, decisions, handoffs, knowledge.
-- [`AUTONOMY.md`](AUTONOMY.md) — three separable autonomy dials and rungs R0–R4. Fresh installs
+- [`SPEC.md`](SPEC.md) defines the garden format: board, decisions, handoffs, knowledge.
+- [`AUTONOMY.md`](AUTONOMY.md) sets out three separable autonomy dials and rungs R0–R4. Fresh installs
   fail closed to R0 (read-only). Grants live in `.overlay/`; the git driver refuses writes that
   lack authority.
-- [`DISTRIBUTION.md`](DISTRIBUTION.md) — substrate vs. instance ownership, manual update and
-  contribution flow, and the sanitize boundary.
-- [`RUBRIC.md`](RUBRIC.md) — deterministic, report-only checks: an input to autonomy decisions,
-  never proof by themselves that an action is correct.
-- [`docs/non-code-autonomy/`](docs/non-code-autonomy/README.md) — design contracts distilled from
+- [`DISTRIBUTION.md`](DISTRIBUTION.md) covers substrate vs. instance ownership, the manual update
+  and contribution flow, and the sanitize boundary.
+- [`RUBRIC.md`](RUBRIC.md) specifies deterministic, report-only checks. They are an input to
+  autonomy decisions, never proof by themselves that an action is correct.
+- [`docs/non-code-autonomy/`](docs/non-code-autonomy/README.md) holds design contracts distilled from
   a reviewed personal-assistant deployment: capability-specific autonomy, observed failure modes,
   and fencing untrusted task-board text. These are **findings and specifications**, not claims
   that this repository ships a personal-assistant integration.
-- `npm run sanitize` — credential shapes plus org/person/narrative particulars. Declare your own
+- `npm run sanitize` scans for credential shapes and org/person/narrative particulars. Declare your own
   particulars in `.overlay/particulars` (gitignored). Review what the gate does and does not catch
   in `DISTRIBUTION.md`; passing a scan is not a substitute for human release review.
 
