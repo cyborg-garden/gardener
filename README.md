@@ -72,6 +72,7 @@ not turn an unrestricted shell account into a sandbox.
 | Autonomy | R0–R4 policy primitives, per-capability grants, unconditional driver write-policy | A resident loop calling the act-gate; non-git board drivers |
 | Correctness | `RUBRIC.md` check contract | Rubric runner and shipped reference checks |
 | Non-code tasks | Generalized autonomy, incident, and task contracts in `docs/non-code-autonomy/` | Board integration, approval queue, and write-back machinery |
+| PR triage | `stages/pr-triage/`: a verdict per open pull request, draft decisions, and an opt-in pinned merge step | Wiring into a resident loop |
 | Distribution | Path ownership model and two-layer sanitize gate | Automated upstream sync and contribution commands |
 
 ## Read next
@@ -88,6 +89,9 @@ not turn an unrestricted shell account into a sandbox.
   a reviewed personal-assistant deployment: capability-specific autonomy, observed failure modes,
   and fencing untrusted task-board text. These are **findings and specifications**, not claims
   that this repository ships a personal-assistant integration.
+- [`stages/pr-triage/`](stages/pr-triage/README.md) is a gardener stage you can run today: one
+  verdict per open pull request, supply-chain gates on dependency bumps, and draft decisions for
+  anything a person must call. It proposes; merging is a separate, opt-in, pinned step.
 - `npm run sanitize` scans for credential shapes and org/person/narrative particulars. Declare your own
   particulars in `.overlay/particulars` (gitignored). Review what the gate does and does not catch
   in `DISTRIBUTION.md`; passing a scan is not a substitute for human release review.
