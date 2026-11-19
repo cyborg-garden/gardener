@@ -4,7 +4,7 @@ The substrate is **markdown + light YAML frontmatter**, under `garden/`. No data
 document is a plain file; the layout below *is* the contract. `garden-io` reads and writes it;
 a validator (`tools/validate.js`) enforces this SPEC.
 
-## `garden/state/threads.md` — the board
+## `garden/state/threads.md`: the board
 Sectioned kanban. Each `##` heading is a lane; each `- [ ]`/`- [x]` line is an item.
 
 ```
@@ -25,7 +25,7 @@ n ∈ 1..4. `#id` is a short stable slug. Replies are `> reply:` lines under an 
 (spaced em-dash) separates title from description; it splits at the FIRST occurrence, so a title
 cannot itself contain ` — `.
 
-## `garden/state/decisions.md` — open decisions
+## `garden/state/decisions.md`: open decisions
 ```
 ## D-2026-07-11-01  needs: you
 Question text.
@@ -34,7 +34,7 @@ Question text.
 status: open        # open | resolved
 ```
 
-## `garden/state/global.md` — cycle log + header
+## `garden/state/global.md`: cycle log and header
 First block is a machine-read header; the rest is an append-only log.
 ```
 <!-- gardener:header

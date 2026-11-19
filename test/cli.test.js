@@ -58,7 +58,7 @@ test('resolve with no ref exits 2 with error: on stderr', () => {
 // artefact's own CLI — the most reachable write path it has, and the one a jailbroken
 // loop would shell out to — performed every write with the second enforcement layer
 // switched off. AUTONOMY.md leans on that layer: "a jailbroken or confused loop still
-// cannot mutate protected state — the driver refuses."
+// cannot mutate protected state, because the driver refuses."
 
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

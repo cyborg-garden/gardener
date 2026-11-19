@@ -2,9 +2,9 @@
 //
 // Layer 1 (tools/sanitize-scan.sh) catches credential- and machine-shaped strings:
 // home paths, tailnet hostnames, PEM headers, UUIDs, phone numbers. It cannot catch the
-// class DISTRIBUTION.md calls Layer 2 — "operator and engagement *particulars* — real
-// names, client names, internal codenames — individually innocuous but collectively
-// identifying of a private context". This file is that layer, in code.
+// class DISTRIBUTION.md calls Layer 2: "operator and engagement *particulars*, such as
+// real names, client names, and internal codenames. Each is innocuous alone, but
+// together they identify a private context." This file is that layer, in code.
 //
 // Two sources of signal, both DETERMINISTIC and both offline:
 //
