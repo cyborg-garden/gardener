@@ -64,5 +64,5 @@ within `ceil(total / cap)` runs.
 ---
 
 A rubric that follows the contract and these three lessons is deterministic,
-report-only, and honest about what it cannot see. That is the standard it must meet
+report-only, honest about what it cannot see, and blind to nothing past a cap. That is the standard it must meet
 before autonomy decisions lean on it.

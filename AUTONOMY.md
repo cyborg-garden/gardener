@@ -122,8 +122,8 @@ A capability may be promoted from `propose` to `act` only when all of these hold
 2. **Bounded blast radius:** it touches a known, small set of things, not an
    open-ended sweep.
 3. **Confined to agent-owned regions:** it does not write human-owned state.
-4. **A correctness signal exists.** For non-code work, this is the condition that
-   decides everything:
+4. **A correctness signal exists.** For non-code work, this is the deciding
+   condition:
    - *Code-shaped* capabilities have a deterministic signal: tests pass, CI is green,
      the build succeeds. That signal is what makes code autonomy safe to escalate.
      Rubric checks (`RUBRIC.md`) are a further deterministic *input* here. They
