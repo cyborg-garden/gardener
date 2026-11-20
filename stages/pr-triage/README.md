@@ -50,7 +50,9 @@ Three switches, all yours, all off by default:
    repo on purpose: a file inside the tree is one a model with a shell can write. A loop
    should also check for it *before* its model turn and pass
    `PR_TRIAGE_MERGE_PINNED=yes` or `no`; with `no`, a grant that appeared during the turn
-   is ignored.
+   is ignored. That pin only delays a mid-turn grant by one run: a file written during
+   this turn is a real grant next time. The real guard is whatever stops your model
+   writing outside the project at all.
 
 Then run the merge step from your loop's own shell, after the model turn:
 
@@ -75,7 +77,8 @@ The gates, all required:
 - **The lockfile, not the title.** Package and versions are read from
   `package-lock.json` at the base and head commits. Exactly one package changes, its
   tarball URL and integrity equal the registry's for that name and version, and the
-  title must agree. `package.json` may change dependency ranges only.
+  title must agree. `package.json` may change the bumped package's own dependency range
+  and nothing else.
 - **One lockfile.** The PR changes exactly one `package-lock.json` plus `package.json`
   files. Another lockfile riding along (`npm-shrinkwrap.json`, `yarn.lock`, and so on)
   or a workflow file sends it to a decision.

