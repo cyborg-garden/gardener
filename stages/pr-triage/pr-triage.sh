@@ -48,8 +48,8 @@
 #                     diff (base vs head), not from the title. Exactly one
 #                     package changes, its tarball URL and integrity equal the
 #                     registry's dist for that name@version, and the title
-#                     must agree with it. package.json may change only its
-#                     dependency ranges.
+#                     must agree with it. package.json may change only the
+#                     bumped package's own range.
 #   - commits         every commit on the PR is AUTHORED by a listed bot id,
 #                     COMMITTED by GitHub's web-flow or a listed bot id, and
 #                     carries a verified signature. "verified" is about the
@@ -347,13 +347,15 @@ lock_truth() {
       | ($dist.tarball // "") != "" and ($dist.integrity // "") != ""
         and $c[0].resolved == $dist.tarball and $c[0].integrity == $dist.integrity' >/dev/null 2>&1 \
     || { LOCK_WHY="lockfile tarball or integrity differs from the registry"; return 0; }
-  # package.json may change its dependency ranges and nothing else.
+  # package.json may change the BUMPED package's range and nothing else: a
+  # second range changing would pull in a package this PR never vetted.
   while IFS= read -r f; do
     case "$f" in package.json|*/package.json) ;; *) continue ;; esac
     raw_at "$slug" "$f" "$bsha" > "$a" && raw_at "$slug" "$f" "$hsha" > "$b" || { LOCK="unknown"; LOCK_WHY="package.json unreadable"; return 0; }
-    jq -e -n --slurpfile a "$a" --slurpfile b "$b" '
-      def core: del(.dependencies, .devDependencies, .optionalDependencies, .peerDependencies);
-      ($a[0] | core) == ($b[0] | core)' >/dev/null 2>&1 || { LOCK_WHY="package.json changes more than dependency ranges"; return 0; }
+    jq -e -n --arg p "$pkg" --slurpfile a "$a" --slurpfile b "$b" '
+      def core: del(.dependencies[$p], .devDependencies[$p], .optionalDependencies[$p], .peerDependencies[$p]);
+      ($a[0] | type) == "object" and ($b[0] | type) == "object"
+      and ($a[0] | core) == ($b[0] | core)' >/dev/null 2>&1 || { LOCK_WHY="package.json changes more than the bumped package range"; return 0; }
   done <<EOF
 $files
 EOF
