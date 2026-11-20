@@ -45,8 +45,12 @@ Three switches, all yours, all off by default:
 1. `PR_TRIAGE_UNASKED_SEVERITIES="critical"` names the advisory severities that may
    become candidates. Empty means none.
 2. `PR_TRIAGE_LLM_CMD` points at a model command (below). No model, no unasked merge.
-3. A grant file, `.overlay/pr-triage-merge.grant`. Without it the merge step only
-   reports `would-merge`.
+3. A grant file, `~/.config/gardener/pr-triage-merge.grant` (`PR_TRIAGE_MERGE_GRANT` to
+   move it). Without it the merge step only reports `would-merge`. It lives outside the
+   repo on purpose: a file inside the tree is one a model with a shell can write. A loop
+   should also check for it *before* its model turn and pass
+   `PR_TRIAGE_MERGE_PINNED=yes` or `no`; with `no`, a grant that appeared during the turn
+   is ignored.
 
 Then run the merge step from your loop's own shell, after the model turn:
 
@@ -64,13 +68,17 @@ The gates, all required:
 
 - **A listed bot.** The author is a `Bot` whose numeric id is in `PR_TRIAGE_BOT_IDS`,
   on a bot-shaped branch, not a fork. Logins are never matched.
-- **Bot commits only.** Every commit is authored by a listed bot id and has a verified
-  signature.
+- **Bot commits only.** Every commit is authored by a listed bot id, committed by
+  GitHub's web-flow or a listed bot id (`PR_TRIAGE_COMMITTER_IDS`), and has a verified
+  signature. The committer matters: "verified" is about the committer's key, so a person
+  can name the bot as author and sign with their own key.
 - **The lockfile, not the title.** Package and versions are read from
-  `package-lock.json` at the base and head commits. Exactly one package changes, it
-  resolves from the npm registry, and the title must agree. `package.json` may change
-  dependency ranges only.
-- **Manifests and lockfiles only.** A workflow file disqualifies the PR.
+  `package-lock.json` at the base and head commits. Exactly one package changes, its
+  tarball URL and integrity equal the registry's for that name and version, and the
+  title must agree. `package.json` may change dependency ranges only.
+- **One lockfile.** The PR changes exactly one `package-lock.json` plus `package.json`
+  files. Another lockfile riding along (`npm-shrinkwrap.json`, `yarn.lock`, and so on)
+  or a workflow file sends it to a decision.
 - **Security fix at an allowed severity.** A GitHub advisory affects the old version
   and not the new one. Unknown severity never qualifies.
 - **Supply chain (npm only).** The new version is at least 3 days old, has the same
@@ -78,6 +86,10 @@ The gates, all required:
 - **State.** CI green, behind 0, no conflicts. Unknown never counts as green.
 - **Not a major version.** Those always go to a decision, flagged for a smoke test.
 - **Model read.** It must print `SUPPLY_VERDICT=pass`.
+
+Turn on branch protection with **"Require branches to be up to date before merging"**
+on every watched repo. The merge is pinned to the verified head commit, but the base can
+still advance between the verify and the merge; that setting makes GitHub refuse then.
 
 Whether your gardener may run the merge step at all is your `AUTONOMY.md` grant.
 

@@ -3,7 +3,8 @@
 # verify step are fakes; a tripwire `gh` on PATH logs any real call. The
 # end-to-end pass through the real `pr-triage.sh --verify` lives in
 # pr-triage.test.sh §9. Runs on bash 3.2+ and GNU userlands.
-set -uo pipefail
+# No `pipefail`: `printf … | grep -q …` checks must not depend on write timing.
+set -u
 
 BIN="$(cd "$(dirname "$0")" && pwd)"
 SUT="${BIN}/pr-triage-merge.sh"
@@ -57,6 +58,19 @@ O="$(run)"
 check "all gates + grant -> merged with --match-head-commit" "printf '%s' \"\$O\" | grep -q '^MERGE|acme/app#1|merged|' && grep -qx \"pr merge 1 -R acme/app --squash --match-head-commit $SHA\" \"$W\""
 O="$(run PR_TRIAGE_MERGE_GRANT="${TMP}/absent")"
 check "no grant -> would-merge, nothing merged" "printf '%s' \"\$O\" | grep -q '|would-merge|' && ! merged"
+
+O="$(run PR_TRIAGE_MERGE_PINNED=no)"
+check "N4: grant not present before the cycle -> would-merge, nothing merged" "printf '%s' \"\$O\" | grep -q '|would-merge|.*not present before the cycle' && ! merged"
+O="$(run PR_TRIAGE_MERGE_PINNED=yes)"
+check "N4: grant pinned before the cycle -> merged" "printf '%s' \"\$O\" | grep -q '|merged|' && merged"
+mkdir -p "${TMP}/home/.config/gardener" "${TMP}/wt/.overlay"; touch "${TMP}/wt/.overlay/pr-triage-merge.grant"
+O="$(cd "${TMP}/wt" && : > "$W" && env -u PR_TRIAGE_MERGE_GRANT -u XDG_CONFIG_HOME HOME="${TMP}/home" PATH="${TMP}/trip:$PATH" \
+      PR_TRIAGE_GH="${TMP}/bin/gh" PR_TRIAGE_MERGE_VERIFY="${TMP}/bin/verify" FAKE_W="$W" V_SHA="$SHA" FAKE_HEAD="$SHA" bash "$SUT" --from "${TMP}/c")"
+check "N4: a grant file inside the working tree is not the grant" "printf '%s' \"\$O\" | grep -q '|would-merge|' && ! merged"
+touch "${TMP}/home/.config/gardener/pr-triage-merge.grant"
+O="$(cd "${TMP}/wt" && : > "$W" && env -u PR_TRIAGE_MERGE_GRANT -u XDG_CONFIG_HOME HOME="${TMP}/home" PATH="${TMP}/trip:$PATH" \
+      PR_TRIAGE_GH="${TMP}/bin/gh" PR_TRIAGE_MERGE_VERIFY="${TMP}/bin/verify" FAKE_W="$W" V_SHA="$SHA" FAKE_HEAD="$SHA" bash "$SUT" --from "${TMP}/c")"
+check "N4: the default grant is the operator config dir" "printf '%s' \"\$O\" | grep -q '|merged|' && merged"
 
 echo "2. every gate, one at a time, blocks the merge"
 for kv in unasked_merge=false state=approval state=major ci=pending ci=red behind=? behind=3 conflict=? conflict=yes \

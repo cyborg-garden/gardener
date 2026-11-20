@@ -7,10 +7,14 @@
 # turn. It is deterministic end to end:
 #
 #  1. DEFAULT OFF, twice. PR_TRIAGE_UNASKED_SEVERITIES is empty by default, so
-#     nothing is ever a candidate; and with no grant file
-#     (.overlay/pr-triage-merge.grant, PR_TRIAGE_MERGE_GRANT to override) it
-#     verifies and prints `would-merge`, and never calls gh pr merge. The
-#     operator creates the grant; delete it to revoke.
+#     nothing is ever a candidate; and with no grant file it verifies and
+#     prints `would-merge`, and never calls gh pr merge. The grant lives
+#     OUTSIDE the repo, in the operator's config dir
+#     (~/.config/gardener/pr-triage-merge.grant; PR_TRIAGE_MERGE_GRANT to
+#     override), because a file inside the tree is one a model with a shell
+#     can write. A loop should also read the grant BEFORE its model turn and
+#     pass PR_TRIAGE_MERGE_PINNED=yes|no: with `no`, a grant that appeared
+#     during the turn is ignored. The operator creates it; delete to revoke.
 #  2. The candidate list is only a hint. Each ref is shape-checked, then
 #     `pr-triage.sh --verify` re-derives EVERY gate fresh for that PR (listed
 #     bot id, signed bot commits, lockfile truth, advisories, supply chain,
@@ -31,7 +35,8 @@ set -uo pipefail
 GH="${PR_TRIAGE_GH:-gh}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 VERIFY="${PR_TRIAGE_MERGE_VERIFY:-${HERE}/pr-triage.sh}"
-GRANT="${PR_TRIAGE_MERGE_GRANT:-.overlay/pr-triage-merge.grant}"
+GRANT="${PR_TRIAGE_MERGE_GRANT:-${XDG_CONFIG_HOME:-${HOME}/.config}/gardener/pr-triage-merge.grant}"
+PINNED="${PR_TRIAGE_MERGE_PINNED:-}"     # yes|no from the runner (read before the cycle); empty = by hand
 MAX="${PR_TRIAGE_MERGE_MAX:-3}"
 FROM=""
 while [ $# -gt 0 ]; do
@@ -79,6 +84,10 @@ while IFS= read -r ref; do
   done_repos="$done_repos$repo "
   if [ ! -f "$GRANT" ]; then
     emit "$ref" would-merge "every gate passed at $sha; grant file absent — dry-run, not merging"
+    continue
+  fi
+  if [ -n "$PINNED" ] && [ "$PINNED" != "yes" ]; then
+    emit "$ref" would-merge "every gate passed at $sha; grant was not present before the cycle — ignored this run"
     continue
   fi
   if "$GH" pr merge "$pr" -R "$repo" --squash --match-head-commit "$sha" >/dev/null 2>&1; then

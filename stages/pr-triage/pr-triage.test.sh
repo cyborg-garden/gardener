@@ -6,7 +6,10 @@
 # stubs that log any call; section 0 proves each tripwire fires, so "no
 # tripwire hit" later means something.
 # Runs on bash 3.2+ (macOS) and GNU userlands.
-set -uo pipefail
+# No `pipefail` here on purpose: every check is `printf … | grep -q …`, and
+# grep -q exits at the first match. With pipefail, a printf still writing gets
+# EPIPE and fails the whole check (or, under `!`, passes it) depending on load.
+set -u
 
 BIN="$(cd "$(dirname "$0")" && pwd)"
 RUNNER="${BIN}/pr-triage.sh"
@@ -122,7 +125,8 @@ adv() { printf '%s' "$2" > "$(fx api "advisories?ecosystem=npm&affects=$1&per_pa
 files() { printf '%s' "$3" > "$(fx api "repos/$1/pulls/$2/files?per_page=100")"; }
 user() { printf '{"user":{"id":%s,"type":"%s"}}' "$3" "$4" > "$(fx api "repos/$1/pulls/$2")"; }
 commits() { printf '%s' "$3" > "$(fx api "repos/$1/pulls/$2/commits?per_page=100")"; }
-BOTCOMMIT='{"author":{"id":'$BOT',"type":"Bot"},"commit":{"verification":{"verified":true}}}'
+WEBFLOW=19864447
+BOTCOMMIT='{"author":{"id":'$BOT',"type":"Bot"},"committer":{"id":'$WEBFLOW',"type":"User"},"commit":{"verification":{"verified":true}}}'
 raw() { printf '%s' "$4" > "$(fx api "repos/$1/contents/$2?ref=$3")"; }
 LOCK0='{"lockfileVersion":3,"packages":{"":{"name":"app","version":"1.0.0"},
  "node_modules/lodash":{"version":"4.17.20","resolved":"https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz","integrity":"sha512-a"},
@@ -147,7 +151,9 @@ dep_ok() {
 reg() {  # pkg from to published-epoch pub_from pub_to new-postinstall?
   local scripts='{}'; [ "${7:-}" = 1 ] && scripts='{"postinstall":"node x.js"}'
   jq -n --arg f "$2" --arg t "$3" --arg p "$(iso "$4")" --arg pf "$5" --arg pt "$6" --argjson sc "$scripts" \
-    '{time:{($t):$p}, versions:{($f):{_npmUser:{name:$pf}}, ($t):{_npmUser:{name:$pt}, scripts:$sc}}}' \
+    '{time:{($t):$p}, versions:{($f):{_npmUser:{name:$pf}},
+       ($t):{_npmUser:{name:$pt}, scripts:$sc,
+             dist:{tarball:("https://registry.npmjs.org/x-" + $t + ".tgz"), integrity:("sha512-" + $t)}}}}' \
     > "${FIX}/reg_$(key "https://registry.npmjs.org/$1")"
 }
 
@@ -263,10 +269,43 @@ O="$(t1)"; check "package.json gains a script -> flags" "printf '%s' \"\$O\" | g
 reset_one
 commits acme/one 1 "[$BOTCOMMIT,{\"author\":{\"id\":4242,\"type\":\"User\"},\"commit\":{\"verification\":{\"verified\":true}}}]"
 O="$(t1)"; check "extra commit by a person on the bot branch -> flags" "row \"\$O\" acme/one#1 | grep -q 'NEEDS FIX' && printf '%s' \"\$O\" | grep -q 'commits: fail'"
-commits acme/one 1 "[{\"author\":{\"id\":$BOT,\"type\":\"Bot\"},\"commit\":{\"verification\":{\"verified\":false}}}]"
+commits acme/one 1 "[{\"author\":{\"id\":$BOT,\"type\":\"Bot\"},\"committer\":{\"id\":$WEBFLOW,\"type\":\"User\"},\"commit\":{\"verification\":{\"verified\":false}}}]"
 O="$(t1)"; check "unsigned bot commit -> flags" "printf '%s' \"\$O\" | grep -q 'commits: fail'"
 commits acme/one 1 "[{\"author\":null,\"commit\":{\"verification\":{\"verified\":true}}}]"
 O="$(t1)"; check "commit with no linked author -> flags" "printf '%s' \"\$O\" | grep -q 'commits: fail'"
+bc() { printf '{"author":{"id":%s,"type":"Bot"},"committer":%s,"commit":{"verification":{"verified":true}}}' "$BOT" "$1"; }
+commits acme/one 1 "[$(bc '{"id":4242,"type":"User"}')]"
+O="$(t1)"; check "N1: bot as author, a person as committer, verified -> flags" "row \"\$O\" acme/one#1 | grep -q 'NEEDS FIX' && printf '%s' \"\$O\" | grep -q 'commits: fail'"
+commits acme/one 1 "[$BOTCOMMIT,$(bc '{"id":4242,"type":"User"}')]"
+O="$(t1)"; check "N1: one forged commit among good ones -> flags" "printf '%s' \"\$O\" | grep -q 'commits: fail'"
+commits acme/one 1 "[$(bc null)]"
+O="$(t1)"; check "N1: no linked committer -> flags" "printf '%s' \"\$O\" | grep -q 'commits: fail'"
+BOTC='{"id":'$BOT',"type":"Bot"}'     # built outside "$(…)": bash 3.2 mis-parses escaped quotes there
+commits acme/one 1 "[$(bc "$BOTC")]"
+O="$(t1)"; check "N1: committed by the listed bot itself -> still a candidate" "row \"\$O\" acme/one#1 | grep -q 'AUTO-MERGE CANDIDATE'"
+commits acme/one 1 "[$BOTCOMMIT]"
+O="$(t1 PR_TRIAGE_COMMITTER_IDS=)"; check "N1: web-flow removed from the committer list -> flags" "printf '%s' \"\$O\" | grep -q 'commits: fail'"
+commits acme/one 1 "[$(bc '{"id":4242,"type":"User"}')]"
+O="$(t1 PR_TRIAGE_COMMITTER_IDS=4242)"; check "N1: committer list is configurable" "row \"\$O\" acme/one#1 | grep -q 'AUTO-MERGE CANDIDATE'"
+reset_one
+for extra in npm-shrinkwrap.json yarn.lock pnpm-lock.yaml sub/package-lock.json; do
+  files acme/one 1 "[{\"filename\":\"package.json\"},{\"filename\":\"package-lock.json\"},{\"filename\":\"$extra\"}]"
+  O="$(t1)"
+  check "N2: $extra riding along -> decision, never a candidate" "row \"\$O\" acme/one#1 | grep -q 'MERGE AFTER approval (critical security fix)' && printf '%s' \"\$O\" | grep -q 'scope: mixed' && printf '%s' \"\$O\" | grep -q 'Merge acme/one#1 '"
+done
+files acme/one 1 '[{"filename":"package.json"}]'
+O="$(t1)"; check "N2: no package-lock.json at all -> never a candidate" "! row \"\$O\" acme/one#1 | grep -q CANDIDATE"
+reset_one
+evil() { printf '%s' "$LOCK0" | jq -c --arg r "$1" --arg i "$2" '.packages["node_modules/lodash"] = {version:"4.17.21", resolved:$r, integrity:$i}'; }
+raw acme/one package-lock.json "$(sha 3001)" "$(evil https://registry.npmjs.org/other-pkg/-/other-pkg-1.0.0.tgz sha512-4.17.21)"
+O="$(t1)"; check "N3: registry-hosted tarball of ANOTHER artifact -> flags" "row \"\$O\" acme/one#1 | grep -q 'NEEDS FIX' && printf '%s' \"\$O\" | grep -q 'lockfile tarball or integrity differs from the registry'"
+raw acme/one package-lock.json "$(sha 3001)" "$(evil https://registry.npmjs.org/x-4.17.21.tgz sha512-FORGED)"
+O="$(t1)"; check "N3: right tarball URL, wrong integrity -> flags" "printf '%s' \"\$O\" | grep -q 'lockfile tarball or integrity differs from the registry'"
+raw acme/one package-lock.json "$(sha 3001)" "$(evil https://registry.npmjs.org/x-4.17.21.tgz sha512-4.17.21)"
+O="$(t1)"; check "N3: tarball and integrity equal the registry's -> candidate" "row \"\$O\" acme/one#1 | grep -q 'AUTO-MERGE CANDIDATE'"
+jq 'del(.versions["4.17.21"].dist)' "${FIX}/reg_$(key https://registry.npmjs.org/lodash)" > "${TMP}/r" && cp "${TMP}/r" "${FIX}/reg_$(key https://registry.npmjs.org/lodash)"
+O="$(t1)"; check "N3: registry gives no dist to compare -> flags, not a candidate" "! row \"\$O\" acme/one#1 | grep -q CANDIDATE"
+reg lodash 4.17.20 4.17.21 $((NOW - 30*DAY)) maint-a maint-a
 reset_one
 files acme/one 1 '[{"filename":"package-lock.json"},{"filename":".github/workflows/ci.yml"}]'
 O="$(t1)"; check "workflow file in the bump -> scope fail, no candidate" "printf '%s' \"\$O\" | grep -q 'scope: fail' && ! row \"\$O\" acme/one#1 | grep -q CANDIDATE"
@@ -416,6 +455,8 @@ check "no grant -> would-merge, no merge call" "printf '%s' \"\$M\" | grep -q '^
 touch "${TMP}/grant"
 M="$(mrun FAKE_LLM_OUT="$LLM_PASS" PR_TRIAGE_MERGE_GRANT="${TMP}/grant")"
 check "grant + all gates -> merged, pinned to the verified commit" "printf '%s' \"\$M\" | grep -q '^MERGE|acme/one#1|merged|' && grep -q \"MERGE pr merge 1 -R acme/one --squash --match-head-commit $(sha 3001)\" \"$CALLS.writes\""
+M="$(mrun FAKE_LLM_OUT="$LLM_PASS" PR_TRIAGE_MERGE_GRANT="${TMP}/grant" PR_TRIAGE_MERGE_PINNED=no)"
+check "N4: grant that was not there before the cycle -> would-merge, no merge call" "printf '%s' \"\$M\" | grep -q '|would-merge|.*not present before the cycle' && ! grep -q MERGE \"$CALLS.writes\""
 M="$(mrun FAKE_LLM_OUT='SUPPLY_VERDICT=fail' PR_TRIAGE_MERGE_GRANT="${TMP}/grant")"
 check "grant but llm fail -> skip, no merge call" "printf '%s' \"\$M\" | grep -q '|skip|not verified:.*llm=fail' && ! grep -q MERGE \"$CALLS.writes\""
 echo "acme/app#4" > "${TMP}/c1"
